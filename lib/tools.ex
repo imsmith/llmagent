@@ -1,23 +1,24 @@
 defmodule LLMAgent.Tools do
-  @moduledoc """
-  LLMAgent.Tools
 
-  Provides a set of tools for AI Agents to interact with a Linux system and perform various tasks.
+	@moduledoc """
+	LLMAgent.Tools
 
-  Available tools:
-		- `all/0`: Returns a list of all available tools.
-    - `bash/0`: Interacts with the Linux Bash shell.
-    - `web/0`: Interacts with the World Wide Web (API calls, browser simulation).
-    - `dbus/0`: Interacts with the Linux D-Bus system.
-    - `systemd/0`: Manages Linux services via systemd.
-    - `inotify/0`: Monitors file system events using inotify.
-    - `udev/0`: Interacts with the Linux udev device manager.
-    - `file/0`: Provides file system operations.
-		- `net/0`: Provides network operations.
-		- `proc/0`: Provides process operations.
-		- `crypto/0`: Provides cryptographic operations.
+	Provides a set of tools for AI Agents to interact with a Linux system and perform various tasks.
+
+	Available tools:
+	- `All/0`: Returns a list of all available tools.
+	- `Bash/0`: Interacts with the Linux Bash shell.
+	- `Web/0`: Interacts with the World Wide Web (API calls, browser simulation).
+	- `Dbus/0`: Interacts with the Linux D-Bus system.
+	- `Systemd/0`: Manages Linux services via systemd.
+	- `Inotify/0`: Monitors file system events using inotify.
+	- `Udev/0`: Interacts with the Linux udev device manager.
+	- `File/0`: Provides file system operations.
+	- `Net/0`: Provides network operations.
+	- `Proc/0`: Provides process operations.
+	- `Crypto/0`: Provides cryptographic operations.
 	Each tool is implemented as a module and can be used to perform specific tasks related to its functionality.
-  """
+	"""
 
   @type tool_name ::
           :bash | :web | :dbus | :systemd | :inotify | :udev | :file | :net | :proc | :crypto
@@ -34,6 +35,27 @@ defmodule LLMAgent.Tools do
 			Proc,
 			Crypto
 		}
+
+		@spec bash() :: module()
+		def bash, do: Bash
+
+		@spec web() :: module()
+		def web, do: Web
+
+		@spec dbus() :: module()
+		def dbus, do: DBus
+
+		@spec systemd() :: module()
+		def systemd, do: Systemd
+
+		@spec inotify() :: module()
+		def inotify, do: Inotify
+
+		@spec udev() :: module()
+		def udev, do: Udev
+
+		@spec file() :: module()
+		def file, do: File
 
 		@spec net() :: module()
 		def net, do: Net

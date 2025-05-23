@@ -1,8 +1,8 @@
-defmodule LlmagentTest do
+defmodule LLMAgentTest do
   use ExUnit.Case
-  doctest Llmagent
+  doctest LLMAgent
 
   test "greets the world" do
-    assert Llmagent.hello() == :world
+    assert LLMAgent.hello() == :world
   end
 end
