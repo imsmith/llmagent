@@ -2,22 +2,41 @@ defmodule LLMAgent.Tools.BashTest do
   use ExUnit.Case, async: true
 
   alias LLMAgent.Tools.Bash
+  alias LLMAgent.Errors.ErrorStruct
 
-  describe "describe/0" do
-    test "returns a string summary" do
-      assert is_binary(Bash.describe())
+  describe "perform/2 with \"exec\"" do
+    test "runs a valid command and returns output" do
+      {:ok, %{output: output, exit_code: 0}} =
+        Bash.perform("exec", %{"command" => "echo hello"})
+
+      assert output =~ "hello"
+    end
+
+    test "returns error for failing command" do
+      {:error, %ErrorStruct{} = err} =
+        Bash.perform("exec", %{"command" => "exit 42"})
+
+      assert err.reason == "command_failed"
+      assert err.field == "command"
+      assert err.message =~ "status 42"
+    end
+
+    test "returns error for missing command input" do
+      result = Bash.perform("exec", %{})
+      assert match?({:error, %ErrorStruct{}}, result)
+    end
+
+    test "returns error if input is not a string" do
+      result = Bash.perform("exec", %{"command" => 123})
+      assert match?({:error, _}, result)
     end
   end
 
-  describe "perform/2" do
-    test "returns error for unknown command" do
-      assert {:error, :unknown_command} == Bash.perform("not_real", %{})
-    end
+  describe "perform/2 with unknown action" do
+    test "returns error struct for unsupported action" do
+      {:error, %ErrorStruct{} = err} = Bash.perform("explode", %{"command" => "ls"})
 
-    @tag :integration
-    test "successfully performs exec" do
-      result = Bash.perform("exec", %{"command" => "echo hello"})
-      assert match?({_out, 0}, result)
+      assert err.reason == "unknown_command"
     end
   end
 end
