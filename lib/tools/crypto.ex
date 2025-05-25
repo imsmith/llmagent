@@ -148,7 +148,4 @@ defmodule LLMAgent.Tools.Crypto do
       {:error, _} = err -> err
     end
   end
-
-  defp valid_ecdsa_point?(<<4, _::binary>> = bin) when byte_size(bin) == 65, do: true
-  defp valid_ecdsa_point?(_), do: false
 end
