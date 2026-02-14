@@ -10,6 +10,7 @@ defmodule LLMAgent.Tools.Udev do
   """
 
   @behaviour LLMAgent.Tool
+  alias Comn.Errors.ErrorStruct
 
   @impl true
   def describe do
@@ -28,26 +29,30 @@ defmodule LLMAgent.Tools.Udev do
   def perform("list", _args) do
     {blk, _} = System.cmd("lsblk", ["-o", "NAME,SIZE,TYPE,MOUNTPOINT"], stderr_to_stdout: true)
     {usb, _} = System.cmd("lsusb", [], stderr_to_stdout: true)
-    {:ok, "Block Devices:\n#{blk}\nUSB Devices:\n#{usb}"}
+    {:ok, %{output: %{block_devices: String.trim(blk), usb_devices: String.trim(usb)}, metadata: %{action: "list"}}}
   end
 
   def perform("info", %{"path" => path}) do
-    System.cmd("udevadm", ["info", "--query=all", "--name=#{path}"], stderr_to_stdout: true)
-    |> normalize()
+    case System.cmd("udevadm", ["info", "--query=all", "--name=#{path}"], stderr_to_stdout: true) do
+      {out, 0} -> {:ok, %{output: String.trim(out), metadata: %{path: path}}}
+      {out, code} -> {:error, ErrorStruct.new("command_failed", "path", "udevadm failed (exit #{code}): #{String.trim(out)}")}
+    end
   end
 
   def perform("usb", _args) do
-    System.cmd("lsusb", [], stderr_to_stdout: true)
-    |> normalize()
+    case System.cmd("lsusb", [], stderr_to_stdout: true) do
+      {out, 0} -> {:ok, %{output: String.trim(out), metadata: %{action: "usb"}}}
+      {out, code} -> {:error, ErrorStruct.new("command_failed", "lsusb", "lsusb failed (exit #{code}): #{String.trim(out)}")}
+    end
   end
 
   def perform("pci", _args) do
-    System.cmd("lspci", [], stderr_to_stdout: true)
-    |> normalize()
+    case System.cmd("lspci", [], stderr_to_stdout: true) do
+      {out, 0} -> {:ok, %{output: String.trim(out), metadata: %{action: "pci"}}}
+      {out, code} -> {:error, ErrorStruct.new("command_failed", "lspci", "lspci failed (exit #{code}): #{String.trim(out)}")}
+    end
   end
 
-  def perform(_, _), do: {:error, :unknown_command}
-
-  defp normalize({out, 0}), do: {:ok, String.trim(out)}
-  defp normalize({out, _}), do: {:error, String.trim(out)}
+  def perform(_, _),
+    do: {:error, ErrorStruct.new("unknown_command", nil, "Unrecognized Udev action")}
 end

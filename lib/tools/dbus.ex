@@ -1,14 +1,15 @@
-defmodule LLMAgent.Tools.Dbus do
+defmodule LLMAgent.Tools.DBus do
   @moduledoc """
   Provides access to Linux D-Bus messaging system using `busctl`.
 
   Supported actions:
-  - `"list"` → lists all active bus services
-  - `"introspect"` → introspects a service path
-  - `"call"` → calls a method on a service interface
+  - `"list"` - lists all active bus services
+  - `"introspect"` - introspects a service path
+  - `"call"` - calls a method on a service interface
   """
 
   @behaviour LLMAgent.Tool
+  alias Comn.Errors.ErrorStruct
 
   @impl true
   def describe do
@@ -23,13 +24,11 @@ defmodule LLMAgent.Tools.Dbus do
 
   @impl true
   def perform("list", _args) do
-    System.cmd("busctl", ["list"], stderr_to_stdout: true)
-    |> normalize()
+    run_busctl(["list"], %{action: "list"})
   end
 
   def perform("introspect", %{"service" => svc, "path" => path}) do
-    System.cmd("busctl", ["introspect", svc, path], stderr_to_stdout: true)
-    |> normalize()
+    run_busctl(["introspect", svc, path], %{service: svc, path: path})
   end
 
   def perform("call", %{
@@ -38,12 +37,16 @@ defmodule LLMAgent.Tools.Dbus do
         "interface" => iface,
         "method" => method
       }) do
-    System.cmd("busctl", ["call", svc, path, iface, method], stderr_to_stdout: true)
-    |> normalize()
+    run_busctl(["call", svc, path, iface, method], %{service: svc, path: path, interface: iface, method: method})
   end
 
-  def perform(_, _), do: {:error, :unknown_command}
+  def perform(_, _),
+    do: {:error, ErrorStruct.new("unknown_command", nil, "Unrecognized DBus action")}
 
-  defp normalize({out, 0}), do: {:ok, String.trim(out)}
-  defp normalize({out, _}), do: {:error, String.trim(out)}
+  defp run_busctl(args, metadata) do
+    case System.cmd("busctl", args, stderr_to_stdout: true) do
+      {out, 0} -> {:ok, %{output: String.trim(out), metadata: metadata}}
+      {out, code} -> {:error, ErrorStruct.new("command_failed", "busctl", "busctl failed (exit #{code}): #{String.trim(out)}")}
+    end
+  end
 end

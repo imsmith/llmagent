@@ -2,11 +2,11 @@ defmodule LLMAgent.Tools.BashTest do
   use ExUnit.Case, async: true
 
   alias LLMAgent.Tools.Bash
-  alias LLMAgent.Errors.ErrorStruct
+  alias Comn.Errors.ErrorStruct
 
   describe "perform/2 with \"exec\"" do
     test "runs a valid command and returns output" do
-      {:ok, %{output: output, exit_code: 0}} =
+      {:ok, %{output: output, metadata: %{exit_code: 0}}} =
         Bash.perform("exec", %{"command" => "echo hello"})
 
       assert output =~ "hello"

@@ -1,5 +1,0 @@
-defimpl String.Chars, for: LLMAgent.Errors.ErrorStruct do
-  def to_string(%{reason: r, message: m}) do
-    "[#{r}] #{m}"
-  end
-end

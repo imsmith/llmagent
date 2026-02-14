@@ -4,8 +4,8 @@ defmodule LLMAgent do
 
   alias LLMAgent.RolePrompt
   alias LLMAgent.Tools
-  alias LLMAgent.Errors.ErrorStruct
-  alias LLMAgent.Event
+  alias Comn.Errors.ErrorStruct
+  alias Comn.Events.EventStruct
 
   @default_model "gpt-4"
   @default_api_host "http://localhost:4000"
@@ -39,12 +39,7 @@ defmodule LLMAgent do
 
   @impl true
   def handle_call({:prompt, user_input}, _from, state) do
-    updated = append_message(state, "user", user_input)
-
-    Task.Supervisor.async(LLMAgent.TaskSup, fn ->
-      call_llm(updated.api_host, updated.model, updated.history)
-    end)
-
+    updated = do_prompt(user_input, state)
     {:reply, :ok, updated}
   end
 
@@ -52,12 +47,16 @@ defmodule LLMAgent do
   def handle_info({ref, {:ok, %{"choices" => [%{"message" => %{"content" => content}}]}}}, state) do
     Process.demonitor(ref, [:flush])
 
+    emit_event(:llm_response, "agent.llm_response", %{
+      content_length: String.length(content),
+      is_tool_call: tool_call?(content)
+    })
+
     case parse_tool_call(content) do
       {:tool_call, tool, action, args} ->
-        result =
-          dispatch_tool(tool, action, args)
-          |> emit_event("tool:#{tool}/#{action}")
+        emit_event(:tool_dispatch, "agent.tool_dispatch", %{tool: tool, action: action})
 
+        result = timed_dispatch(tool, action, args)
         followup = format_tool_result(result)
 
         updated =
@@ -76,15 +75,58 @@ defmodule LLMAgent do
 
   def handle_info({ref, {:error, reason}}, state) do
     Process.demonitor(ref, [:flush])
+
+    emit_event(:error, "agent.error", %{
+      reason: inspect(reason),
+      source: :llm_request
+    })
+
     Logger.error("LLM request failed: #{inspect(reason)}")
     {:noreply, state}
   end
 
   def handle_info({:prompt, content}, state) do
-    handle_call({:prompt, content}, self(), state)
+    updated = do_prompt(content, state)
+    {:noreply, updated}
+  end
+
+  ## Prompt Logic
+
+  defp do_prompt(user_input, state) do
+    emit_event(:prompt, "agent.prompt", %{content: user_input, role: state.role})
+
+    updated = append_message(state, "user", user_input)
+
+    Task.Supervisor.async(LLMAgent.TaskSup, fn ->
+      call_llm(updated.api_host, updated.model, updated.history)
+    end)
+
+    updated
   end
 
   ## Tool Dispatch
+
+  defp timed_dispatch(tool, action, args) do
+    start = System.monotonic_time(:millisecond)
+
+    result = dispatch_tool(tool, action, args)
+
+    duration_ms = System.monotonic_time(:millisecond) - start
+
+    {result_status, _} = case result do
+      {:ok, _} -> {:ok, nil}
+      {:error, _} -> {:error, nil}
+    end
+
+    emit_event(:invocation, "tool.#{tool}", %{
+      action: action,
+      args: sanitize_args(args),
+      result: result_status,
+      duration_ms: duration_ms
+    })
+
+    result
+  end
 
   defp dispatch_tool(tool, action, args) do
     try do
@@ -124,25 +166,37 @@ defmodule LLMAgent do
     end
   end
 
+  defp tool_call?(content) do
+    case Jason.decode(content) do
+      {:ok, %{"tool" => _, "action" => _}} -> true
+      _ -> false
+    end
+  end
+
   defp format_tool_result({:ok, result}), do: inspect(result)
 
   defp format_tool_result({:error, error}) do
-    error_struct = LLMAgent.Error.to_error(error)
+    error_struct = Comn.Error.to_error(error)
     "[Tool Error] #{to_string(error_struct)}"
   end
 
-  defp emit_event(result, topic) do
-    event = %{
-      type: "tool_result",
-      topic: topic,
-      data: result
-    }
-
-    Event.to_event(event)
-    |> Registry.dispatch(LLMAgent.EventBus, fn _ -> [event] end)
-
-    result
+  defp emit_event(type, topic, data) do
+    event = EventStruct.new(type, topic, data, __MODULE__)
+    LLMAgent.EventLog.record(event)
+    LLMAgent.EventBus.broadcast(topic, event)
+  rescue
+    _ -> :ok
   end
+
+  defp sanitize_args(args) when is_map(args) do
+    Map.new(args, fn
+      {k, v} when is_binary(v) and byte_size(v) > 200 ->
+        {k, String.slice(v, 0, 200) <> "...(truncated)"}
+      {k, v} -> {k, v}
+    end)
+  end
+
+  defp sanitize_args(args), do: args
 
   defp via(name) when is_atom(name), do: {:global, name}
 end

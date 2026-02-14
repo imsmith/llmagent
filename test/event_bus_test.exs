@@ -1,19 +1,18 @@
-
 defmodule LLMAgent.EventBusTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   setup do
-    {:ok, _} = LLMAgent.EventBus.start_link([])
-    :ok
+    case Registry.start_link(keys: :duplicate, name: LLMAgent.EventBus) do
+      {:ok, _} -> :ok
+      {:error, {:already_started, _}} -> :ok
+    end
   end
 
   test "broadcasts messages to subscribers" do
     topic = "test_topic"
     message = "Hello, World!"
 
-    pid = self()
     LLMAgent.EventBus.subscribe(topic)
-
     LLMAgent.EventBus.broadcast(topic, message)
 
     assert_receive {:event, ^topic, ^message}
@@ -23,9 +22,7 @@ defmodule LLMAgent.EventBusTest do
     topic = "unsubscribed_topic"
     message = "This should not be received"
 
-    pid = self()
     LLMAgent.EventBus.subscribe("other_topic")
-
     LLMAgent.EventBus.broadcast(topic, message)
 
     refute_receive {:event, ^topic, ^message}

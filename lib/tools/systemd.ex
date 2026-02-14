@@ -11,6 +11,7 @@ defmodule LLMAgent.Tools.Systemd do
   """
 
   @behaviour LLMAgent.Tool
+  alias Comn.Errors.ErrorStruct
 
   @impl true
   def describe do
@@ -27,33 +28,22 @@ defmodule LLMAgent.Tools.Systemd do
   end
 
   @impl true
-  def perform("status", %{"unit" => unit}) do
-    System.cmd("systemctl", ["status", unit], stderr_to_stdout: true)
-    |> normalize()
-  end
-
-  def perform("start", %{"unit" => unit}) do
-    System.cmd("systemctl", ["start", unit], stderr_to_stdout: true)
-    |> normalize()
-  end
-
-  def perform("stop", %{"unit" => unit}) do
-    System.cmd("systemctl", ["stop", unit], stderr_to_stdout: true)
-    |> normalize()
-  end
-
-  def perform("restart", %{"unit" => unit}) do
-    System.cmd("systemctl", ["restart", unit], stderr_to_stdout: true)
-    |> normalize()
-  end
+  def perform("status", %{"unit" => unit}), do: run_systemctl(["status", unit], %{unit: unit})
+  def perform("start", %{"unit" => unit}), do: run_systemctl(["start", unit], %{unit: unit})
+  def perform("stop", %{"unit" => unit}), do: run_systemctl(["stop", unit], %{unit: unit})
+  def perform("restart", %{"unit" => unit}), do: run_systemctl(["restart", unit], %{unit: unit})
 
   def perform("list", _args) do
-    System.cmd("systemctl", ["list-units", "--type=service", "--state=running"], stderr_to_stdout: true)
-    |> normalize()
+    run_systemctl(["list-units", "--type=service", "--state=running"], %{action: "list"})
   end
 
-  def perform(_, _), do: {:error, :unknown_command}
+  def perform(_, _),
+    do: {:error, ErrorStruct.new("unknown_command", nil, "Unrecognized Systemd action")}
 
-  defp normalize({out, 0}), do: {:ok, String.trim(out)}
-  defp normalize({out, _}), do: {:error, String.trim(out)}
+  defp run_systemctl(args, metadata) do
+    case System.cmd("systemctl", args, stderr_to_stdout: true) do
+      {out, 0} -> {:ok, %{output: String.trim(out), metadata: metadata}}
+      {out, _} -> {:ok, %{output: String.trim(out), metadata: Map.put(metadata, :degraded, true)}}
+    end
+  end
 end

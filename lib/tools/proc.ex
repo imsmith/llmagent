@@ -1,6 +1,7 @@
 defmodule LLMAgent.Tools.Proc do
   @moduledoc "Provides structured introspection of running processes and /proc system data."
   @behaviour LLMAgent.Tool
+  alias Comn.Errors.ErrorStruct
 
   @impl true
   def describe do
@@ -9,36 +10,59 @@ defmodule LLMAgent.Tools.Proc do
 
   @impl true
   def perform("list", _args) do
-    System.cmd("ps", ["-eo", "pid,comm,%cpu,%mem", "--no-headers"], stderr_to_stdout: true)
-    |> case do
+    case System.cmd("ps", ["-eo", "pid,comm,%cpu,%mem", "--no-headers"], stderr_to_stdout: true) do
       {out, 0} ->
         lines = String.split(out, "\n", trim: true)
 
         result =
           Enum.map(lines, fn line ->
-            [pid, cmd, cpu, mem] = String.split(line, ~r/\s+/, trim: true)
-            %{
-              pid: String.to_integer(pid),
-              cmd: cmd,
-              cpu: String.to_float(cpu),
-              mem: String.to_float(mem)
-            }
+            parts = String.split(line, ~r/\s+/, trim: true)
+
+            case parts do
+              [pid, cmd | rest] ->
+                {cpu, mem} =
+                  case rest do
+                    [c, m] -> {parse_float(c), parse_float(m)}
+                    _ -> {0.0, 0.0}
+                  end
+
+                %{pid: String.to_integer(pid), cmd: cmd, cpu: cpu, mem: mem}
+
+              _ ->
+                nil
+            end
           end)
+          |> Enum.reject(&is_nil/1)
 
-        {:ok, result}
+        {:ok, %{output: result, metadata: %{count: length(result)}}}
 
-      {err, _} -> {:error, err}
+      {err, code} ->
+        {:error, ErrorStruct.new("command_failed", "ps", "ps failed (exit #{code}): #{String.trim(err)}")}
     end
   end
 
   def perform("info", %{"pid" => pid}) when is_integer(pid) do
-    with true <- File.exists?("/proc/#{pid}/status"),
-         {:ok, contents} <- File.read("/proc/#{pid}/status") do
-      {:ok, contents}
+    path = "/proc/#{pid}/status"
+
+    with true <- File.exists?(path),
+         {:ok, contents} <- File.read(path) do
+      {:ok, %{output: contents, metadata: %{pid: pid}}}
     else
-      _ -> {:error, :not_found}
+      false ->
+        {:error, ErrorStruct.new("not_found", "pid", "Process #{pid} not found")}
+
+      {:error, reason} ->
+        {:error, ErrorStruct.new("file_error", "pid", "Cannot read #{path}: #{reason}")}
     end
   end
 
-  def perform(_, _), do: {:error, :unknown_command}
+  def perform(_, _),
+    do: {:error, ErrorStruct.new("unknown_command", nil, "Unrecognized Proc action")}
+
+  defp parse_float(s) do
+    case Float.parse(s) do
+      {f, _} -> f
+      :error -> 0.0
+    end
+  end
 end

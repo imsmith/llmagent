@@ -2,9 +2,8 @@ defmodule LLMAgent.Utils.RequireBinary do
   @moduledoc """
   Utility for checking system binaries and emitting events if any are missing.
 
-  This module verifies that required command-line tools (like `wg`, `gpg`, `ssh-keygen`)
-  exist in the system's PATH. If a binary is missing, it emits an error event via
-  `LLMAgent.EventLog` and `LLMAgent.EventBus`.
+  Verifies that required command-line tools exist in the system's PATH.
+  If a binary is missing, it emits an error event via EventLog and EventBus.
 
   ## Usage
 
@@ -12,10 +11,9 @@ defmodule LLMAgent.Utils.RequireBinary do
       RequireBinary.check_many(["wg", "gpg", "ssh-keygen"])
   """
 
-  alias LLMAgent.Events.EventStruct
+  alias Comn.Events.EventStruct
   alias LLMAgent.EventLog
   alias LLMAgent.EventBus
-  alias LLMAgent.Utils
 
   @doc "Checks that a single binary exists in the system PATH. Emits an event if missing."
   @spec check(String.t()) :: :ok | {:error, String.t()}
@@ -47,15 +45,10 @@ defmodule LLMAgent.Utils.RequireBinary do
   end
 
   defp log_event(bin, msg) do
-    event = %EventStruct{
-      timestamp: Utils.Time.call("now_iso8601", []),
-      source: __MODULE__,
-      type: :error,
-      topic: "require_binary:#{bin}",
-      data: msg
-    }
-
+    event = EventStruct.new(:error, "require_binary:#{bin}", msg, __MODULE__)
     EventLog.record(event)
     EventBus.broadcast(event.topic, event)
+  rescue
+    _ -> :ok
   end
 end

@@ -9,12 +9,12 @@ defmodule LLMAgent.Tools.Bash do
     - `"command"`: Bash-compatible command string
 
   ### Response:
-    - `{:ok, %{output: string, exit_code: integer}}`
-    - `{:error, %LLMAgent.Errors.ErrorStruct{}}`
+    - `{:ok, %{output: string, metadata: %{exit_code: integer}}}`
+    - `{:error, %Comn.Errors.ErrorStruct{}}`
   """
 
   @behaviour LLMAgent.Tool
-  alias LLMAgent.Errors.ErrorStruct
+  alias Comn.Errors.ErrorStruct
 
   @impl true
   def describe do
@@ -28,7 +28,7 @@ defmodule LLMAgent.Tools.Bash do
       - `command`: string to execute
 
     Response:
-      - On success: `{:ok, %{output: ..., exit_code: 0}}`
+      - On success: `{:ok, %{output: ..., metadata: %{exit_code: 0}}}`
       - On failure: `{:error, %ErrorStruct{}}`
     """
   end
@@ -39,7 +39,7 @@ defmodule LLMAgent.Tools.Bash do
       {output, exit_code} = System.cmd("bash", ["-c", cmd], stderr_to_stdout: true)
 
       if exit_code == 0 do
-        {:ok, %{output: output, exit_code: exit_code}}
+        {:ok, %{output: output, metadata: %{exit_code: exit_code}}}
       else
         {:error,
          ErrorStruct.new(

@@ -2,6 +2,7 @@ defmodule LLMAgent.Tools.InotifyTest do
   use ExUnit.Case, async: true
 
   alias LLMAgent.Tools.Inotify
+  alias Comn.Errors.ErrorStruct
 
   describe "describe/0" do
     test "returns a string summary" do
@@ -11,13 +12,24 @@ defmodule LLMAgent.Tools.InotifyTest do
 
   describe "perform/2" do
     test "returns error for unknown command" do
-      assert {:error, :unknown_command} == Inotify.perform("not_real", %{})
+      {:error, %ErrorStruct{reason: "unknown_command"}} = Inotify.perform("not_real", %{})
     end
 
-    @tag :integration
-    test "successfully performs watch" do
+    test "watch returns result for existing path" do
       result = Inotify.perform("watch", %{"path" => "/tmp"})
-      assert match?({:error, _}, result)
+      # Either success (if inotifywait installed) or missing_binary error
+      assert match?({:ok, %{output: _, metadata: _}}, result) or
+             match?({:error, %ErrorStruct{reason: "missing_binary"}}, result)
+    end
+
+    test "watch returns error for nonexistent path" do
+      result = Inotify.perform("watch", %{"path" => "/nonexistent/path"})
+      assert match?({:error, %ErrorStruct{}}, result)
+    end
+
+    test "stop returns ok" do
+      {:ok, %{output: _, metadata: %{status: :stopped}}} =
+        Inotify.perform("stop", %{"path" => "/tmp"})
     end
   end
 end

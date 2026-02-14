@@ -5,7 +5,7 @@ defmodule LLMAgent.EventLog do
 
   use Agent
 
-  alias LLMAgent.Event
+  alias Comn.Event
 
   @type event :: struct()
 
@@ -15,7 +15,7 @@ defmodule LLMAgent.EventLog do
     Agent.start_link(fn -> [] end, name: __MODULE__)
   end
 
-  @doc "Records any struct that implements the LLMAgent.Event protocol."
+  @doc "Records any struct that implements the Comn.Event protocol."
   @spec record(term()) :: :ok
   def record(term) do
     event = Event.to_event(term)
