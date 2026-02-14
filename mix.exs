@@ -4,10 +4,15 @@ defmodule LLMAgent.MixProject do
   def project do
     [
       app: :LLMAgent,
-      version: "0.2.0",
+      version: "0.3.0",
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      releases: [
+        llmagent: [
+          applications: [LLMAgent: :permanent]
+        ]
+      ]
     ]
   end
 
@@ -24,8 +29,7 @@ defmodule LLMAgent.MixProject do
       {:req, "~> 0.5.0"},
       {:jason, "~> 1.4"},
       {:b58, "~> 1.0"},
-      {:errors, path: "../comn/apps/errors"},
-      {:events, path: "../comn/apps/events"}
+      {:comn, github: "imsmith/comn", tag: "v0.3.0"}
     ]
   end
 end
