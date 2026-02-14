@@ -44,7 +44,7 @@ defmodule LLMAgent do
   end
 
   @impl true
-  def handle_info({ref, {:ok, %{"choices" => [%{"message" => %{"content" => content}}]}}}, state) do
+  def handle_info({ref, {:ok, %Req.Response{body: %{"choices" => [%{"message" => %{"content" => content}}]}}}}, state) do
     Process.demonitor(ref, [:flush])
 
     emit_event(:llm_response, "agent.llm_response", %{
@@ -150,10 +150,10 @@ defmodule LLMAgent do
   end
 
   defp call_llm(api_host, model, messages) do
-    Req.post("#{api_host}/chat/completions", json: %{
-      model: model,
-      messages: messages
-    })
+    Req.post("#{api_host}/chat/completions",
+      json: %{model: model, messages: messages},
+      receive_timeout: 120_000
+    )
   end
 
   defp parse_tool_call(content) do
