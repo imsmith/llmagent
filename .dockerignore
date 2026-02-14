@@ -1,0 +1,8 @@
+_build/
+deps/
+.git/
+.elixir_ls/
+.claude/
+*.md
+erl_crash.dump
+test/
