@@ -10,11 +10,12 @@ LLMAgent is Phase 3 (Feb 23-28). Read the sprint plan for day-by-day tasks.
 
 A GenServer-based framework for building autonomous AI agents that invoke system tools in a controlled manner. The agent talks to an LLM API, parses tool-call JSON from responses, dispatches to tool modules, formats results, and loops back to the LLM.
 
-## Current State (as of Feb 12, 2026)
+## Current State (as of Feb 17, 2026)
 
-**BROKEN — does not compile.** Last commit changed `lib/LLMAgent.ex` to `require Comn` but Comn is not in mix.exs dependencies.
+**Build: 0 errors. Tests: 86 pass, 0 failures.**
 
-### What Works (when it compiled)
+### What Works
+- **Comn v0.4.0** — GitHub dependency, compiles clean
 - **Bash tool** — tested, proper error handling
 - **Web tool** — GET/POST with headers/params, tested
 - **Crypto tool** — full ed25519 & ecdsa, key generation, signing/verification
@@ -25,21 +26,18 @@ A GenServer-based framework for building autonomous AI agents that invoke system
 ### What's Partial
 - File, Net, Proc, DBus, Systemd, Udev tools — work but return raw text, inconsistent error handling
 
-### What's Broken/Missing
-- **Comn dependency** — not in mix.exs, compilation fails
-- **Application startup** — requires wg, ssh-keygen, gpg or crashes
-- **Inotify tool** — perform/2 returns :not_implemented (Watcher GenServer exists but unused)
-- **Agent lifecycle tests** — stub test checks nonexistent hello/0 function
+### What's Still TODO (sprint Days 11–15)
+- **Tool output standardization** — normalize all tools to consistent response format
 - **Event wiring** — emit_event exists but tools don't emit events
+- **Inotify tool** — perform/2 returns :not_implemented (decide: implement or remove)
+- **Agent lifecycle tests** — need proper coverage
 
 ## Depends On
 
-**Comn** at `~/github/comn` — must be added as path dependency:
+**Comn** v0.4.0 as GitHub dependency:
 ```elixir
-{:comn, path: "../comn"}
+{:comn, github: "imsmith/comn", tag: "v0.4.0"}
 ```
-
-Comn must be at v0.2.0 (sprint Phase 1) before LLMAgent work begins.
 
 ## Sprint Goal for LLMAgent
 
@@ -54,8 +52,8 @@ README        -> documents architecture, tools, usage
 
 ## Key Decisions This Sprint
 
-1. **Comn integration**: Add as path dependency, alias Comn.Errors.ErrorStruct and Comn.Events throughout
-2. **Startup requirements**: Make wg/ssh-keygen/gpg optional (warn, don't crash)
+1. ~~**Comn integration**: Add as path dependency~~ — Done. GitHub dep at v0.4.0.
+2. ~~**Startup requirements**: Make wg/ssh-keygen/gpg optional~~ — Done. Warns instead of crashing.
 3. **Tool output format**: Standardize ALL tools to `{:ok, %{output: term(), metadata: map()}} | {:error, %ErrorStruct{}}`
 4. **Inotify**: Implement or delete — no stubs
 5. **Events**: All tool invocations emit events; agent emits prompt/response/error events
@@ -92,11 +90,9 @@ prompt(agent, content)
 ## Dependencies
 
 ```elixir
-# mix.exs
 req ~> 0.5.0           # HTTP client
 jason ~> 1.4           # JSON
 b58 ~> 1.0             # Base58 encoding
 mix_test_watch ~> 1.1  # dev-only TDD
-# MISSING — add this sprint:
-comn (path: "../comn")
+comn v0.4.0            # GitHub dep (errors, events, secrets, contexts, repo)
 ```
