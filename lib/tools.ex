@@ -1,84 +1,101 @@
 defmodule LLMAgent.Tools do
+  @moduledoc """
+  Registry of available tool modules for agent dispatch.
 
-	@moduledoc """
-	LLMAgent.Tools
+  Each function returns the module implementing `LLMAgent.Tool` for that tool name.
 
-	Provides a set of tools for AI Agents to interact with a Linux system and perform various tasks.
+  ## Examples
 
-	Available tools:
-	- `All/0`: Returns a list of all available tools.
-	- `Bash/0`: Interacts with the Linux Bash shell.
-	- `Web/0`: Interacts with the World Wide Web (API calls, browser simulation).
-	- `Dbus/0`: Interacts with the Linux D-Bus system.
-	- `Systemd/0`: Manages Linux services via systemd.
-	- `Inotify/0`: Monitors file system events using inotify.
-	- `Udev/0`: Interacts with the Linux udev device manager.
-	- `File/0`: Provides file system operations.
-	- `Net/0`: Provides network operations.
-	- `Proc/0`: Provides process operations.
-	- `Crypto/0`: Provides cryptographic operations.
-	Each tool is implemented as a module and can be used to perform specific tasks related to its functionality.
-	"""
+      iex> LLMAgent.Tools.bash()
+      LLMAgent.Tools.Bash
+
+      iex> LLMAgent.Tools.crypto()
+      LLMAgent.Tools.Crypto
+
+      iex> LLMAgent.Tools.all() |> Keyword.keys()
+      [:bash, :web, :dbus, :systemd, :inotify, :udev, :file, :net, :proc, :crypto]
+  """
 
   @type tool_name ::
           :bash | :web | :dbus | :systemd | :inotify | :udev | :file | :net | :proc | :crypto
 
-		alias LLMAgent.Tools.{
-			Bash,
-			Web,
-			DBus,
-			Systemd,
-			Inotify,
-			Udev,
-			File,
-			Net,
-			Proc,
-			Crypto
-		}
+  alias LLMAgent.Tools.{
+    Bash,
+    Web,
+    DBus,
+    Systemd,
+    Inotify,
+    Udev,
+    File,
+    Net,
+    Proc,
+    Crypto
+  }
 
-		@spec bash() :: module()
-		def bash, do: Bash
+  @doc "Returns the Bash tool module."
+  @spec bash() :: module()
+  def bash, do: Bash
 
-		@spec web() :: module()
-		def web, do: Web
+  @doc "Returns the Web tool module."
+  @spec web() :: module()
+  def web, do: Web
 
-		@spec dbus() :: module()
-		def dbus, do: DBus
+  @doc "Returns the DBus tool module."
+  @spec dbus() :: module()
+  def dbus, do: DBus
 
-		@spec systemd() :: module()
-		def systemd, do: Systemd
+  @doc "Returns the Systemd tool module."
+  @spec systemd() :: module()
+  def systemd, do: Systemd
 
-		@spec inotify() :: module()
-		def inotify, do: Inotify
+  @doc "Returns the Inotify tool module."
+  @spec inotify() :: module()
+  def inotify, do: Inotify
 
-		@spec udev() :: module()
-		def udev, do: Udev
+  @doc "Returns the Udev tool module."
+  @spec udev() :: module()
+  def udev, do: Udev
 
-		@spec file() :: module()
-		def file, do: File
+  @doc "Returns the File tool module."
+  @spec file() :: module()
+  def file, do: File
 
-		@spec net() :: module()
-		def net, do: Net
+  @doc "Returns the Net tool module."
+  @spec net() :: module()
+  def net, do: Net
 
-		@spec proc() :: module()
-		def proc, do: Proc
+  @doc "Returns the Proc tool module."
+  @spec proc() :: module()
+  def proc, do: Proc
 
-		@spec crypto() :: module()
-		def crypto, do: Crypto
+  @doc "Returns the Crypto tool module."
+  @spec crypto() :: module()
+  def crypto, do: Crypto
 
-		@spec all() :: [{tool_name(), module()}]
-		def all do
-			[
-				bash: bash(),
-				web: web(),
-				dbus: dbus(),
-				systemd: systemd(),
-				inotify: inotify(),
-				udev: udev(),
-				file: file(),
-				net: net(),
-				proc: proc(),
-				crypto: crypto()
-			]
-		end
+  @doc """
+  Returns all available tools as a keyword list of `{name, module}`.
+
+  ## Examples
+
+      iex> tools = LLMAgent.Tools.all()
+      iex> Keyword.get(tools, :bash)
+      LLMAgent.Tools.Bash
+      iex> length(tools)
+      10
+  """
+  @spec all() :: [{tool_name(), module()}]
+  def all do
+    [
+      bash: bash(),
+      web: web(),
+      dbus: dbus(),
+      systemd: systemd(),
+      inotify: inotify(),
+      udev: udev(),
+      file: file(),
+      net: net(),
+      proc: proc(),
+      crypto: crypto()
+    ]
+  end
 end

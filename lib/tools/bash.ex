@@ -16,6 +16,15 @@ defmodule LLMAgent.Tools.Bash do
   @behaviour LLMAgent.Tool
   alias Comn.Errors.ErrorStruct
 
+  @doc """
+  Returns a human-readable description of the Bash tool.
+
+  ## Examples
+
+      iex> LLMAgent.Tools.Bash.describe()
+      ...> |> is_binary()
+      true
+  """
   @impl true
   def describe do
     """
@@ -33,6 +42,22 @@ defmodule LLMAgent.Tools.Bash do
     """
   end
 
+  @doc """
+  Execute a bash action.
+
+  ## Examples
+
+      iex> {:ok, %{output: output, metadata: %{exit_code: 0}}} =
+      ...>   LLMAgent.Tools.Bash.perform("exec", %{"command" => "echo hello"})
+      iex> String.trim(output)
+      "hello"
+
+      iex> {:error, %Comn.Errors.ErrorStruct{reason: "command_failed"}} =
+      ...>   LLMAgent.Tools.Bash.perform("exec", %{"command" => "exit 1"})
+
+      iex> {:error, %Comn.Errors.ErrorStruct{reason: "unknown_command"}} =
+      ...>   LLMAgent.Tools.Bash.perform("nope", %{})
+  """
   @impl true
   def perform("exec", %{"command" => cmd}) when is_binary(cmd) do
     try do

@@ -11,6 +11,15 @@ defmodule LLMAgent.Tools.DBus do
   @behaviour LLMAgent.Tool
   alias Comn.Errors.ErrorStruct
 
+  @doc """
+  Returns a human-readable description of the DBus tool.
+
+  ## Examples
+
+      iex> LLMAgent.Tools.DBus.describe()
+      ...> |> is_binary()
+      true
+  """
   @impl true
   def describe do
     """
@@ -22,9 +31,35 @@ defmodule LLMAgent.Tools.DBus do
     """
   end
 
+  @doc ~S"""
+  Perform a D-Bus action.
+
+  ## Examples
+
+      # List active services
+      {:ok, %{output: listing, metadata: %{action: "list"}}} =
+        LLMAgent.Tools.DBus.perform("list", %{})
+
+      # Introspect a service
+      LLMAgent.Tools.DBus.perform("introspect", %{
+        "service" => "org.freedesktop.DBus",
+        "path" => "/"
+      })
+
+  Unknown action returns error:
+
+      iex> {:error, %Comn.Errors.ErrorStruct{reason: "unknown_command"}} =
+      ...>   LLMAgent.Tools.DBus.perform("nope", %{})
+  """
   @impl true
   def perform("list", _args) do
-    run_busctl(["list"], %{action: "list"})
+    case System.cmd("busctl", ["list", "--no-pager"], stderr_to_stdout: true) do
+      {out, 0} ->
+        services = parse_busctl_list(out)
+        {:ok, %{output: services, metadata: %{action: "list", count: length(services)}}}
+      {out, code} ->
+        {:error, ErrorStruct.new("command_failed", "busctl", "busctl list failed (exit #{code}): #{String.trim(out)}")}
+    end
   end
 
   def perform("introspect", %{"service" => svc, "path" => path}) do
@@ -47,6 +82,24 @@ defmodule LLMAgent.Tools.DBus do
     case System.cmd("busctl", args, stderr_to_stdout: true) do
       {out, 0} -> {:ok, %{output: String.trim(out), metadata: metadata}}
       {out, code} -> {:error, ErrorStruct.new("command_failed", "busctl", "busctl failed (exit #{code}): #{String.trim(out)}")}
+    end
+  end
+
+  defp parse_busctl_list(text) do
+    lines = String.split(text, "\n", trim: true)
+    # Skip header line(s) — busctl list has a header row
+    case lines do
+      [_header | data_lines] ->
+        Enum.map(data_lines, fn line ->
+          parts = String.split(line, ~r/\s+/, trim: true)
+          case parts do
+            [name | rest] -> %{name: name, details: Enum.join(rest, " ")}
+            _ -> nil
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+
+      _ -> []
     end
   end
 end

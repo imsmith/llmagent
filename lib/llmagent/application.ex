@@ -16,6 +16,7 @@ defmodule LLMAgent.Application do
 
     children = [
       {Task.Supervisor, name: LLMAgent.TaskSup},
+      {LLMAgent.Tools.Inotify.Watcher, []},
       {LLMAgent, agent_opts},
       {Registry, keys: :duplicate, name: LLMAgent.EventBus},
       {LLMAgent.EventLog, []}

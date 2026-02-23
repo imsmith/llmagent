@@ -3,11 +3,43 @@ defmodule LLMAgent.Tools.File do
   @behaviour LLMAgent.Tool
   alias Comn.Errors.ErrorStruct
 
+  @doc """
+  Returns a human-readable description of the File tool.
+
+  ## Examples
+
+      iex> LLMAgent.Tools.File.describe()
+      "Performs basic file operations (read/write/delete)."
+  """
   @impl true
   def describe do
     "Performs basic file operations (read/write/delete)."
   end
 
+  @doc """
+  Perform a file action.
+
+  ## Examples
+
+  Write and read back:
+
+      iex> path = Path.join(System.tmp_dir!(), "doctest_file_#{System.unique_integer([:positive])}")
+      iex> {:ok, %{output: :ok, metadata: %{bytes_written: 5}}} =
+      ...>   LLMAgent.Tools.File.perform("write", %{"path" => path, "content" => "hello"})
+      iex> {:ok, %{output: "hello", metadata: %{size: 5}}} =
+      ...>   LLMAgent.Tools.File.perform("read", %{"path" => path})
+      iex> File.rm(path)
+
+  Read nonexistent file:
+
+      iex> {:error, %Comn.Errors.ErrorStruct{reason: "file_error"}} =
+      ...>   LLMAgent.Tools.File.perform("read", %{"path" => "/no/such/file"})
+
+  Unknown action:
+
+      iex> {:error, %Comn.Errors.ErrorStruct{reason: "unknown_command"}} =
+      ...>   LLMAgent.Tools.File.perform("nope", %{})
+  """
   @impl true
   def perform("read", %{"path" => path}) do
     case File.read(path) do

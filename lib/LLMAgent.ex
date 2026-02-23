@@ -4,8 +4,9 @@ defmodule LLMAgent do
 
   alias LLMAgent.RolePrompt
   alias LLMAgent.Tools
+  alias LLMAgent.Events
   alias Comn.Errors.ErrorStruct
-  alias Comn.Events.EventStruct
+  alias Comn.Contexts
 
   @default_model "gpt-4"
   @default_api_host "http://localhost:4000"
@@ -47,14 +48,14 @@ defmodule LLMAgent do
   def handle_info({ref, {:ok, %Req.Response{body: %{"choices" => [%{"message" => %{"content" => content}}]}}}}, state) do
     Process.demonitor(ref, [:flush])
 
-    emit_event(:llm_response, "agent.llm_response", %{
+    Events.emit(:llm_response, "agent.llm_response", %{
       content_length: String.length(content),
       is_tool_call: tool_call?(content)
-    })
+    }, __MODULE__)
 
     case parse_tool_call(content) do
       {:tool_call, tool, action, args} ->
-        emit_event(:tool_dispatch, "agent.tool_dispatch", %{tool: tool, action: action})
+        Events.emit(:tool_dispatch, "agent.tool_dispatch", %{tool: tool, action: action}, __MODULE__)
 
         result = timed_dispatch(tool, action, args)
         followup = format_tool_result(result)
@@ -76,10 +77,10 @@ defmodule LLMAgent do
   def handle_info({ref, {:error, reason}}, state) do
     Process.demonitor(ref, [:flush])
 
-    emit_event(:error, "agent.error", %{
+    Events.emit(:error, "agent.error", %{
       reason: inspect(reason),
       source: :llm_request
-    })
+    }, __MODULE__)
 
     Logger.error("LLM request failed: #{inspect(reason)}")
     {:noreply, state}
@@ -93,7 +94,18 @@ defmodule LLMAgent do
   ## Prompt Logic
 
   defp do_prompt(user_input, state) do
-    emit_event(:prompt, "agent.prompt", %{content: user_input, role: state.role})
+    request_id = "req_" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+    trace_id = state[:trace_id] || "trace_" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+
+    Contexts.new(%{
+      request_id: request_id,
+      trace_id: trace_id,
+      actor: "agent"
+    })
+    Contexts.put(:role, state.role)
+    Contexts.put(:model, state.model)
+
+    Events.emit(:prompt, "agent.prompt", %{content: user_input, role: state.role}, __MODULE__)
 
     updated = append_message(state, "user", user_input)
 
@@ -107,6 +119,9 @@ defmodule LLMAgent do
   ## Tool Dispatch
 
   defp timed_dispatch(tool, action, args) do
+    Contexts.put(:tool, tool)
+    Contexts.put(:action, action)
+
     start = System.monotonic_time(:millisecond)
 
     result = dispatch_tool(tool, action, args)
@@ -118,12 +133,12 @@ defmodule LLMAgent do
       {:error, _} -> {:error, nil}
     end
 
-    emit_event(:invocation, "tool.#{tool}", %{
+    Events.emit(:invocation, "tool.#{tool}", %{
       action: action,
       args: sanitize_args(args),
       result: result_status,
       duration_ms: duration_ms
-    })
+    }, __MODULE__)
 
     result
   end
@@ -131,6 +146,7 @@ defmodule LLMAgent do
   defp dispatch_tool(tool, action, args) do
     try do
       tool_module = apply(Tools, tool, [])
+      Code.ensure_loaded(tool_module)
 
       if function_exported?(tool_module, :perform, 2) do
         tool_module.perform(action, args)
@@ -173,19 +189,20 @@ defmodule LLMAgent do
     end
   end
 
-  defp format_tool_result({:ok, result}), do: inspect(result)
-
-  defp format_tool_result({:error, error}) do
-    error_struct = Comn.Error.to_error(error)
-    "[Tool Error] #{to_string(error_struct)}"
+  defp format_tool_result({:ok, %{output: output, metadata: metadata}}) do
+    Jason.encode!(%{status: "ok", output: output, metadata: metadata})
   end
 
-  defp emit_event(type, topic, data) do
-    event = EventStruct.new(type, topic, data, __MODULE__)
-    LLMAgent.EventLog.record(event)
-    LLMAgent.EventBus.broadcast(topic, event)
-  rescue
-    _ -> :ok
+  defp format_tool_result({:error, %ErrorStruct{} = err}) do
+    Jason.encode!(%{
+      status: "error",
+      error: %{
+        reason: err.reason,
+        field: err.field,
+        message: err.message,
+        suggestion: err.suggestion
+      }
+    })
   end
 
   defp sanitize_args(args) when is_map(args) do

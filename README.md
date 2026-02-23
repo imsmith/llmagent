@@ -2,7 +2,9 @@
 
 A GenServer-based AI agent framework for Elixir. LLMAgent connects to any OpenAI-compatible API, dispatches tool calls to local system tools, and records structured events for every action.
 
-Built for Linux system administration — the default toolset gives an LLM hands-on access to bash, files, processes, networking, systemd, D-Bus, udev, and cryptographic operations.
+Built for Linux system administration — the default toolset gives an LLM hands-on access to bash, files, processes, networking, systemd, D-Bus, udev, inotify, and cryptographic operations.
+
+**License:** AGPL-3.0
 
 ## Architecture
 
@@ -22,31 +24,80 @@ User Prompt
 └──────────┘
 ```
 
-The agent runs as a GenServer. When it receives a prompt, it sends the conversation history to an LLM. If the LLM responds with a tool call (JSON with `tool`, `action`, `args`), the agent dispatches it, appends the result to history, and sends the result back to the LLM for a follow-up. Every step emits structured events through EventBus and EventLog.
+The agent runs as a GenServer. When it receives a prompt, it:
 
-Error and event types come from [Comn](../comn), the shared infrastructure library.
+1. Sets a `Comn.Contexts` context with `request_id`, `trace_id`, and role metadata
+2. Sends the conversation history to an LLM API
+3. If the LLM responds with a tool call (JSON with `tool`, `action`, `args`), dispatches it to the matching tool module
+4. Appends the result to history and loops back to the LLM
+5. Emits structured events at every step — all enriched with context for tracing
+
+Error and event types come from [Comn](https://github.com/imsmith/comn), the shared infrastructure library.
 
 ## Tools
 
-| Tool | Actions | Description |
-|------|---------|-------------|
-| bash | `exec` | Execute shell commands |
-| file | `read`, `write`, `delete` | File system operations |
-| web | `get`, `post` | HTTP requests |
-| net | `list_interfaces`, `ping`, `resolve` | Network operations |
-| proc | `list`, `info` | Process inspection |
-| systemd | `status`, `start`, `stop`, `restart`, `list` | Service management |
-| dbus | `list`, `introspect`, `call` | D-Bus interaction |
-| udev | `list`, `info`, `usb`, `pci` | Device management |
-| crypto | `sha256`, `hmac`, `generate_key`, `generate_keypair`, `sign`, `verify` | Cryptographic operations |
-| inotify | `watch`, `stop` | File system event monitoring |
+| Tool | Module | Actions | Description |
+|------|--------|---------|-------------|
+| bash | `Tools.Bash` | `exec` | Execute shell commands |
+| file | `Tools.File` | `read`, `write`, `delete` | File system operations |
+| web | `Tools.Web` | `get`, `post` | HTTP requests |
+| net | `Tools.Net` | `list_interfaces`, `ping`, `resolve` | Network inspection |
+| proc | `Tools.Proc` | `list`, `info` | Process inspection via /proc |
+| systemd | `Tools.Systemd` | `status`, `start`, `stop`, `restart`, `list` | Service management |
+| dbus | `Tools.DBus` | `list`, `introspect`, `call` | D-Bus messaging |
+| udev | `Tools.Udev` | `list`, `info`, `usb`, `pci` | Device management |
+| crypto | `Tools.Crypto` | `sha256`, `hmac`, `generate_key`, `generate_keypair`, `sign`, `verify` | Cryptographic operations |
+| inotify | `Tools.Inotify` | `watch`, `poll`, `stop`, `list` | Filesystem event monitoring |
 
-All tools return a standard format:
+All tools implement the `LLMAgent.Tool` behaviour and return a standard format:
 
 ```elixir
 {:ok, %{output: term(), metadata: map()}}
 {:error, %Comn.Errors.ErrorStruct{}}
 ```
+
+### Inotify
+
+The inotify tool is backed by a supervised GenServer (`LLMAgent.Tools.Inotify.Watcher`) that manages `inotifywait -m` ports. Each watch gets an integer ID. Events buffer until polled.
+
+```elixir
+# Start watching a directory
+{:ok, %{output: watch_id}} =
+  LLMAgent.Tools.Inotify.perform("watch", %{"path" => "/tmp"})
+
+# Poll for buffered events
+{:ok, %{output: events}} =
+  LLMAgent.Tools.Inotify.perform("poll", %{"watch_id" => watch_id})
+# => [%{event: "CREATE", path: "/tmp/newfile", timestamp: ~U[...]}]
+
+# Stop watching
+{:ok, %{output: final_events}} =
+  LLMAgent.Tools.Inotify.perform("stop", %{"watch_id" => watch_id})
+```
+
+### Adding a Tool
+
+Implement the `LLMAgent.Tool` behaviour:
+
+```elixir
+defmodule LLMAgent.Tools.MyTool do
+  @behaviour LLMAgent.Tool
+
+  @impl true
+  def describe, do: "Does something useful."
+
+  @impl true
+  def perform("action", %{"key" => value}) do
+    {:ok, %{output: result, metadata: %{key: value}}}
+  end
+
+  def perform(_, _) do
+    {:error, Comn.Errors.ErrorStruct.new("unknown_command", nil, "Unknown action")}
+  end
+end
+```
+
+Then register it in `LLMAgent.Tools`.
 
 ## Usage
 
@@ -62,8 +113,14 @@ All tools return a standard format:
   api_host: "http://localhost:11434"
 )
 
-# Send a prompt
+# Send a prompt — the agent calls the LLM asynchronously
 LLMAgent.prompt({:global, :sysadmin_agent}, "What services are running?")
+```
+
+The LLM API must be OpenAI-compatible (`/chat/completions` endpoint). The agent expects tool calls as JSON in the response content:
+
+```json
+{"tool": "bash", "action": "exec", "args": {"command": "systemctl list-units --type=service"}}
 ```
 
 ## Configuration
@@ -79,7 +136,7 @@ Available roles: `:default`, `:sysadmin`
 
 ## Events
 
-Every agent action emits a `Comn.Events.EventStruct` to both EventLog (in-memory log) and EventBus (pub/sub):
+Every agent action emits a `Comn.Events.EventStruct` to both EventLog (in-memory queryable log) and EventBus (Registry-based pub/sub). Events are automatically enriched with `request_id`, `trace_id`, and `correlation_id` from the process-scoped `Comn.Contexts`.
 
 | Topic | Type | When |
 |-------|------|------|
@@ -88,39 +145,94 @@ Every agent action emits a `Comn.Events.EventStruct` to both EventLog (in-memory
 | `agent.tool_dispatch` | `:tool_dispatch` | Agent dispatches a tool call |
 | `agent.error` | `:error` | Any failure |
 | `tool.{name}` | `:invocation` | Tool executes (includes duration_ms) |
+| `tool.inotify` | `:watch_started` | Inotify watch opened |
+| `tool.inotify` | `:watch_stopped` | Inotify watch closed |
+| `tool.inotify.event` | `:fs_event` | Filesystem event detected |
+
+### Subscribing to Events
 
 ```elixir
-# Subscribe to tool events
+# Subscribe to bash tool events
 LLMAgent.EventBus.subscribe("tool.bash")
 receive do
-  {:event, "tool.bash", event} -> IO.inspect(event.data)
+  {:event, "tool.bash", event} ->
+    IO.inspect(event.data)
+    # %{action: "exec", args: %{...}, result: :ok, duration_ms: 12,
+    #   context: %{request_id: "req_...", trace_id: "trace_..."}}
 end
+```
 
-# Query the log
+### Querying the Log
+
+```elixir
 LLMAgent.EventLog.for_topic("agent.error")
 LLMAgent.EventLog.for_type(:invocation)
+LLMAgent.EventLog.since("2026-02-23T00:00:00Z")
+LLMAgent.EventLog.all()
+```
+
+### Emitting Events from Tools
+
+Tools can emit domain-specific events using the public `LLMAgent.Events` module:
+
+```elixir
+LLMAgent.Events.emit(:my_event, "tool.mytool", %{key: "value"}, __MODULE__)
+```
+
+Context fields are attached automatically when a `Comn.Contexts` context is set on the current process.
+
+## Utilities
+
+| Utility | Actions | Description |
+|---------|---------|-------------|
+| `Utils.Encoder` | `base16`, `base64`, `base64url`, `base58`, `raw` | Encode binary data |
+| `Utils.Decoder` | `base16`, `base64`, `base64url`, `base58`, `raw` | Decode encoded strings |
+| `Utils.Time` | `now_iso8601` | UTC timestamp generation |
+| `Utils.RequireBinary` | `check`, `check_many` | Verify system binaries exist |
+
+```elixir
+# Dispatch through the registry
+LLMAgent.Utils.call(:encoder, "base16", %{"data" => "hello"})
+# => {:ok, "68656c6c6f"}
+
+# Or call directly
+LLMAgent.Utils.Encoder.call("base64", %{"data" => "hello"})
+# => {:ok, "aGVsbG8="}
+```
+
+## Supervision Tree
+
+```
+LLMAgent.Supervisor (one_for_one)
+├── Task.Supervisor (LLMAgent.TaskSup)
+├── LLMAgent.Tools.Inotify.Watcher
+├── LLMAgent (agent GenServer)
+├── Registry (LLMAgent.EventBus)
+└── LLMAgent.EventLog (Agent)
 ```
 
 ## Dependencies
 
-LLMAgent depends on [Comn](../comn) for error and event types. Add both as path dependencies:
-
 ```elixir
 defp deps do
   [
-    {:errors, path: "../comn/apps/errors"},
-    {:events, path: "../comn/apps/events"},
-    {:req, "~> 0.5.0"},
-    {:jason, "~> 1.4"}
+    {:req, "~> 0.5.0"},          # HTTP client
+    {:jason, "~> 1.4"},          # JSON
+    {:b58, "~> 1.0"},            # Base58 encoding
+    {:comn, github: "imsmith/comn", tag: "v0.4.0"},
+    {:mix_test_watch, "~> 1.1", only: [:dev], runtime: false}
   ]
 end
 ```
 
+Requires Elixir ~> 1.16.
+
+System binaries used by tools: `bash`, `ip`, `ping`, `dig`, `ps`, `systemctl`, `busctl`, `lsblk`, `lsusb`, `lspci`, `udevadm`, `inotifywait`. Missing binaries log warnings at startup but don't prevent the agent from starting.
+
 ## Tests
 
 ```sh
-mix test                      # all tests
-mix test --exclude integration # skip tests that hit real services
+mix test    # 81 doctests, 125 tests
 ```
 
-86 tests covering agent lifecycle, all 10 tools, event wiring, and error handling.
+Coverage includes agent lifecycle (multi-turn tool loops, stop/restart, concurrent agents, context propagation, event ordering), all 10 tools, event wiring, context enrichment, and error handling.

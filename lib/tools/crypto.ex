@@ -15,6 +15,15 @@ defmodule LLMAgent.Tools.Crypto do
   alias LLMAgent.Utils.Encoder
   alias Comn.Errors.ErrorStruct
 
+  @doc """
+  Returns a human-readable description of the Crypto tool.
+
+  ## Examples
+
+      iex> LLMAgent.Tools.Crypto.describe()
+      ...> |> is_binary()
+      true
+  """
   @impl true
   def describe do
     """
@@ -30,6 +39,47 @@ defmodule LLMAgent.Tools.Crypto do
     """
   end
 
+  @doc """
+  Perform a cryptographic action.
+
+  ## Examples
+
+  SHA-256 hash:
+
+      iex> {:ok, %{output: hash}} = LLMAgent.Tools.Crypto.perform("sha256", %{"data" => "hello"})
+      iex> hash
+      "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+
+  HMAC-SHA256:
+
+      iex> {:ok, %{output: mac, metadata: %{algorithm: "hmac-sha256"}}} =
+      ...>   LLMAgent.Tools.Crypto.perform("hmac", %{"key" => "secret", "data" => "hello"})
+      iex> is_binary(mac)
+      true
+
+  Generate symmetric key:
+
+      iex> {:ok, %{output: key, metadata: %{type: "symmetric", bits: 256}}} =
+      ...>   LLMAgent.Tools.Crypto.perform("generate_key", %{})
+      iex> byte_size(Base.decode64!(key))
+      32
+
+  Generate Ed25519 keypair:
+
+      iex> {:ok, %{output: %{type: "ed25519", private_key: priv, public_key: pub}}} =
+      ...>   LLMAgent.Tools.Crypto.perform("generate_keypair", %{"type" => "ed25519"})
+      iex> is_binary(priv) and is_binary(pub)
+      true
+
+  Sign and verify with Ed25519:
+
+      iex> {:ok, %{output: %{private_key: priv, public_key: pub}}} =
+      ...>   LLMAgent.Tools.Crypto.perform("generate_keypair", %{"type" => "ed25519"})
+      iex> {:ok, %{output: sig}} =
+      ...>   LLMAgent.Tools.Crypto.perform("sign", %{"type" => "ed25519", "data" => "msg", "private_key" => priv})
+      iex> {:ok, %{output: true}} =
+      ...>   LLMAgent.Tools.Crypto.perform("verify", %{"type" => "ed25519", "data" => "msg", "signature" => sig, "public_key" => pub})
+  """
   @impl true
   def perform("sha256", %{"data" => data} = args) when is_binary(data) do
     raw = :crypto.hash(:sha256, data)
