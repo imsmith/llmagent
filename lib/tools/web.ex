@@ -18,6 +18,15 @@ defmodule LLMAgent.Tools.Web do
   @behaviour LLMAgent.Tool
   alias Comn.Errors.ErrorStruct
 
+  @doc """
+  Returns a human-readable description of the Web tool.
+
+  ## Examples
+
+      iex> LLMAgent.Tools.Web.describe()
+      ...> |> is_binary()
+      true
+  """
   @impl true
   def describe do
     """
@@ -36,6 +45,27 @@ defmodule LLMAgent.Tools.Web do
     """
   end
 
+  @doc ~S"""
+  Perform an HTTP action.
+
+  ## Examples
+
+      # GET request
+      {:ok, %{output: body, metadata: %{status: 200, url: url}}} =
+        LLMAgent.Tools.Web.perform("get", %{"url" => "https://httpbin.org/get"})
+
+      # POST request with JSON body
+      LLMAgent.Tools.Web.perform("post", %{
+        "url" => "https://httpbin.org/post",
+        "body" => %{"key" => "value"},
+        "headers" => %{"content-type" => "application/json"}
+      })
+
+  Unknown action returns error:
+
+      iex> {:error, %Comn.Errors.ErrorStruct{reason: "unknown_command"}} =
+      ...>   LLMAgent.Tools.Web.perform("nope", %{})
+  """
   @impl true
   def perform("get", %{"url" => url} = args) do
     opts = base_opts(url, args)

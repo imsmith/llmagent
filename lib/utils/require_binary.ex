@@ -4,18 +4,24 @@ defmodule LLMAgent.Utils.RequireBinary do
 
   Verifies that required command-line tools exist in the system's PATH.
   If a binary is missing, it emits an error event via EventLog and EventBus.
-
-  ## Usage
-
-      RequireBinary.check("wg")
-      RequireBinary.check_many(["wg", "gpg", "ssh-keygen"])
   """
 
   alias Comn.Events.EventStruct
   alias LLMAgent.EventLog
   alias LLMAgent.EventBus
 
-  @doc "Checks that a single binary exists in the system PATH. Emits an event if missing."
+  @doc """
+  Checks that a single binary exists in the system PATH. Emits an event if missing.
+
+  ## Examples
+
+      iex> LLMAgent.Utils.RequireBinary.check("bash")
+      :ok
+
+      iex> {:error, msg} = LLMAgent.Utils.RequireBinary.check("definitely_not_a_real_binary_xyz")
+      iex> msg =~ "not found"
+      true
+  """
   @spec check(String.t()) :: :ok | {:error, String.t()}
   def check(bin) do
     case System.find_executable(bin) do
@@ -29,7 +35,18 @@ defmodule LLMAgent.Utils.RequireBinary do
     end
   end
 
-  @doc "Checks that all binaries in the list are present. Emits one event per missing binary."
+  @doc """
+  Checks that all binaries in the list are present. Emits one event per missing binary.
+
+  ## Examples
+
+      iex> LLMAgent.Utils.RequireBinary.check_many(["bash", "echo"])
+      :ok
+
+      iex> {:error, msgs} = LLMAgent.Utils.RequireBinary.check_many(["bash", "no_such_bin_abc"])
+      iex> length(msgs)
+      1
+  """
   @spec check_many([String.t()]) :: :ok | {:error, [String.t()]}
   def check_many(bins) do
     missing =

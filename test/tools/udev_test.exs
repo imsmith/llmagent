@@ -17,11 +17,11 @@ defmodule LLMAgent.Tools.UdevTest do
 
     @tag :integration
     test "lists devices" do
-      {:ok, %{output: %{block_devices: blk, usb_devices: usb}, metadata: _}} =
+      {:ok, %{output: %{block_devices: blk, usb_devices: usb}, metadata: %{action: "list"}}} =
         Udev.perform("list", %{})
 
-      assert is_binary(blk)
-      assert is_binary(usb)
+      assert is_list(blk)
+      assert is_list(usb)
     end
   end
 end

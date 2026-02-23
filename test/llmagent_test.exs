@@ -183,7 +183,7 @@ defmodule LLMAgentTest do
 
       function_msg = Enum.find(state.history, &(&1.role == "function"))
       assert function_msg != nil
-      assert function_msg.content =~ "Tool Error"
+      assert function_msg.content =~ "\"status\":\"error\""
     end
 
     test "tool failure returns error message for LLM retry" do
@@ -200,7 +200,7 @@ defmodule LLMAgentTest do
 
       function_msg = Enum.find(state.history, &(&1.role == "function"))
       assert function_msg != nil
-      assert function_msg.content =~ "Tool Error"
+      assert function_msg.content =~ "\"status\":\"error\""
     end
   end
 

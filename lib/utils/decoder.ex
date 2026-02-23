@@ -1,20 +1,34 @@
 defmodule LLMAgent.Utils.Decoder do
   @moduledoc """
-  A module for decoding various encoded strings.
+  Decodes encoded strings back to binary.
+
+  ## Examples
+
+      iex> LLMAgent.Utils.Decoder.decode("6869", "base16")
+      {:ok, "hi"}
+
+      iex> LLMAgent.Utils.Decoder.decode("aGk=", "base64")
+      {:ok, "hi"}
+
+      iex> LLMAgent.Utils.Decoder.decode("hello", "raw")
+      {:ok, "hello"}
   """
 
   @doc """
-  Decodes a given string based on the specified encoding type.
+  Decodes a string based on the specified encoding type.
 
-  ## Parameters
+  Supported encodings: `"base16"`, `"base64"`, `"base64url"`, `"base58"`, `"raw"`.
 
-    - str: The string to decode.
-    - encoding: The encoding type. Supported types are "base16", "base64", "base64url", "base58", and "raw".
+  ## Examples
 
-  ## Returns
+      iex> LLMAgent.Utils.Decoder.decode("ff00", "base16")
+      {:ok, <<255, 0>>}
 
-    - {:ok, decoded_string} if decoding is successful.
-    - {:error, reason} if decoding fails.
+      iex> LLMAgent.Utils.Decoder.decode("aGVsbG8=", "base64")
+      {:ok, "hello"}
+
+      iex> LLMAgent.Utils.Decoder.decode("x", "nope")
+      {:error, "Unsupported encoding: nope"}
   """
   @spec decode(String.t(), String.t()) :: binary() | {:error, term()}
   def decode(str, "base16"), do: Base.decode16(str, case: :mixed)
@@ -23,5 +37,4 @@ defmodule LLMAgent.Utils.Decoder do
   def decode(str, "base58"), do: Base58.decode(str)
   def decode(str, "raw"), do: {:ok, str}
   def decode(_, other), do: {:error, "Unsupported encoding: #{other}"}
-
 end

@@ -3,11 +3,38 @@ defmodule LLMAgent.Tools.Proc do
   @behaviour LLMAgent.Tool
   alias Comn.Errors.ErrorStruct
 
+  @doc """
+  Returns a human-readable description of the Proc tool.
+
+  ## Examples
+
+      iex> LLMAgent.Tools.Proc.describe()
+      "Accesses process lists and details via /proc."
+  """
   @impl true
   def describe do
     "Accesses process lists and details via /proc."
   end
 
+  @doc ~S"""
+  Perform a process inspection action.
+
+  ## Examples
+
+      # List running processes
+      {:ok, %{output: procs, metadata: %{count: n}}} =
+        LLMAgent.Tools.Proc.perform("list", %{})
+
+      # Get info for PID 1 (returns parsed key-value map)
+      {:ok, %{output: info, metadata: %{pid: 1}}} =
+        LLMAgent.Tools.Proc.perform("info", %{"pid" => 1})
+      # info is a map like %{"name" => "systemd", "state" => "S (sleeping)", ...}
+
+  Unknown action returns error:
+
+      iex> {:error, %Comn.Errors.ErrorStruct{reason: "unknown_command"}} =
+      ...>   LLMAgent.Tools.Proc.perform("nope", %{})
+  """
   @impl true
   def perform("list", _args) do
     case System.cmd("ps", ["-eo", "pid,comm,%cpu,%mem", "--no-headers"], stderr_to_stdout: true) do
@@ -46,7 +73,8 @@ defmodule LLMAgent.Tools.Proc do
 
     with true <- File.exists?(path),
          {:ok, contents} <- File.read(path) do
-      {:ok, %{output: contents, metadata: %{pid: pid}}}
+      parsed = parse_proc_status(contents)
+      {:ok, %{output: parsed, metadata: %{pid: pid, path: path}}}
     else
       false ->
         {:error, ErrorStruct.new("not_found", "pid", "Process #{pid} not found")}
@@ -58,6 +86,17 @@ defmodule LLMAgent.Tools.Proc do
 
   def perform(_, _),
     do: {:error, ErrorStruct.new("unknown_command", nil, "Unrecognized Proc action")}
+
+  defp parse_proc_status(text) do
+    text
+    |> String.split("\n", trim: true)
+    |> Enum.reduce(%{}, fn line, acc ->
+      case String.split(line, ":\t", parts: 2) do
+        [key, val] -> Map.put(acc, String.downcase(String.trim(key)), String.trim(val))
+        _ -> acc
+      end
+    end)
+  end
 
   defp parse_float(s) do
     case Float.parse(s) do
