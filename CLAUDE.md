@@ -12,7 +12,7 @@ A GenServer-based framework for building autonomous AI agents that invoke system
 
 ## Current State (as of Feb 23, 2026)
 
-**Build: 0 errors. Tests: 81 doctests + 125 tests, 0 failures.**
+**Build: 0 errors. Tests: 96 doctests + 147 tests, 0 failures.**
 
 ### What Works
 - **Comn v0.4.0** — GitHub dependency, compiles clean
@@ -25,7 +25,10 @@ A GenServer-based framework for building autonomous AI agents that invoke system
 - **LLMAgent.Events** — public event emission with automatic context enrichment from Comn.Contexts
 - **Context propagation** — per-prompt Comn.Contexts with request_id, trace_id, actor; flows through tool dispatch and into events
 - **RequireBinary utility** — checks system binaries exist
-- **Agent lifecycle** — tested: multi-turn tool loops, stop/restart, concurrent agents, event ordering, resilience
+- **Agent lifecycle** — tested: multi-turn tool loops, stop/restart, concurrent agents, event ordering, resilience, memory persistence
+- **LLMClient behaviour** — pluggable LLM API client; OpenAI-compatible default implementation
+- **Memory behaviour** — pluggable agent memory; ETS implementation via Comn.Repo.Table.ETS with per-agent isolation
+- **AgentSupervisor** — DynamicSupervisor for multiple concurrent agents (start/stop/list)
 
 ### What's Still TODO
 - **Manual test** — agent prompts, dispatches tool, returns result (end-to-end with real LLM)
@@ -35,11 +38,14 @@ A GenServer-based framework for building autonomous AI agents that invoke system
 - ~~**Inotify tool** — perform/2 returns :not_implemented~~ — Fully implemented with Watcher GenServer, background ports, event buffering
 - ~~**Event wiring** — emit_event exists but tools don't emit events~~ — `LLMAgent.Events.emit/4` is public, context-enriched; Inotify Watcher emits watch_started/watch_stopped/fs_event; agent emits prompt/llm_response/tool_dispatch/invocation/error events
 - ~~**Context wiring**~~ — Comn.Contexts integrated: per-prompt context with request_id/trace_id, propagated through dispatch, attached to all events
-- ~~**Agent lifecycle tests** — need proper coverage~~ — 18 lifecycle tests covering context propagation, multi-turn loops, stop/restart, concurrency, event ordering, resilience
+- ~~**Agent lifecycle tests** — need proper coverage~~ — 19 lifecycle tests covering context propagation, multi-turn loops, stop/restart, concurrency, event ordering, resilience, memory persistence
 - **Bug fix**: `dispatch_tool` now calls `Code.ensure_loaded/1` before `function_exported?/3` — tools that weren't referenced elsewhere (File, Net, etc.) would fail dispatch through the agent
 - ~~**Tool output standardization**~~ — All tools now return structured/parsed data instead of raw command text. Proc info parses /proc status into maps, Systemd status uses `systemctl show` for key-value output, Systemd list parses into service maps, Udev parses lsblk JSON + lsusb/lspci into structured lists, Net ping extracts RTT, DBus list parses busctl output. Udev list error handling fixed (was silently swallowing failures).
-- **Doctests** — 81 doctests across all 20 public modules
+- **Doctests** — 96 doctests across all 25 public modules
 - **README** — comprehensive rewrite documenting architecture, tools, events, utilities, supervision tree
+- ~~**LLMClient behaviour**~~ — `LLMAgent.LLMClient` behaviour + `LLMAgent.LLMClient.OpenAI` impl. Agent state carries `llm_client` module, defaults to OpenAI. Extracted `call_llm/3` → client `chat/2`. `handle_info` matches `{:ok, content}` string instead of `%Req.Response{}`.
+- ~~**Memory behaviour**~~ — `LLMAgent.Memory` behaviour + `LLMAgent.Memory.ETS` impl via Comn.Repo.Table.ETS. Agent persists history on every append + terminate. Restores history on restart if table survives. Designed for future tuple-space backend.
+- ~~**DynamicSupervisor**~~ — `LLMAgent.AgentSupervisor` wraps DynamicSupervisor. Application starts DynamicSupervisor + default agent. Runtime `start_agent/stop_agent/list_agents` API.
 
 ## Depends On
 
@@ -66,6 +72,9 @@ README        -> documents architecture, tools, usage
 3. ~~**Tool output format**: Standardize ALL tools to `{:ok, %{output: term(), metadata: map()}} | {:error, %ErrorStruct{}}`~~ — Done. All tools return structured/parsed data.
 4. ~~**Inotify**: Implement or delete — no stubs~~ — Implemented. Watcher GenServer + watch/poll/stop/list actions.
 5. ~~**Events**: All tool invocations emit events; agent emits prompt/response/error events~~ — Done. Public `LLMAgent.Events.emit/4` with context enrichment.
+6. ~~**LLM client abstraction**: Extract HTTP call behind behaviour~~ — Done. `LLMAgent.LLMClient` behaviour, OpenAI default.
+7. ~~**Memory abstraction**: Pluggable per-agent memory~~ — Done. `LLMAgent.Memory` behaviour, ETS default via Comn.
+8. ~~**DynamicSupervisor**: Multiple concurrent agents~~ — Done. `LLMAgent.AgentSupervisor` with start/stop/list API.
 
 ## Architecture
 
@@ -74,15 +83,28 @@ prompt(agent, content)
   -> GenServer.call
     -> set Comn.Contexts (request_id, trace_id, actor, role, model)
     -> emit :prompt event
-    -> append to history
-    -> async Task: call LLM API
-      -> parse JSON response
+    -> append to history (+ persist to memory)
+    -> async Task: state.llm_client.chat(history, opts)
+      -> {:ok, content} | {:error, reason}
         -> tool_call? dispatch_tool(tool, action, args)
           -> set tool/action in context
           -> Tools.tool() -> Code.ensure_loaded -> module.perform(action, args)
           -> emit :invocation event (with context, timing)
-          -> format result -> append to history -> loop
-        -> not tool_call? append assistant message -> done
+          -> format result -> append to history (+ persist) -> loop
+        -> not tool_call? append assistant message (+ persist) -> done
+```
+
+### Supervision Tree
+
+```
+LLMAgent.Supervisor (one_for_one)
+├── Task.Supervisor (LLMAgent.TaskSup)
+├── Inotify.Watcher
+├── DynamicSupervisor (LLMAgent.AgentSupervisor)
+│   ├── LLMAgent (name: LLMAgent)    ← default, started by Application
+│   └── LLMAgent (name: :agent_2)    ← started at runtime via AgentSupervisor.start_agent/1
+├── Registry (EventBus)
+└── EventLog
 ```
 
 ### Event Flow
@@ -128,7 +150,12 @@ Watcher is a supervised GenServer (`LLMAgent.Tools.Inotify.Watcher`) in the appl
 
 | Module | Purpose |
 |---|---|
-| `LLMAgent` | Main GenServer — prompt handling, tool dispatch, history |
+| `LLMAgent` | Main GenServer — prompt handling, tool dispatch, history, pluggable client + memory |
+| `LLMAgent.LLMClient` | Behaviour for LLM API clients (`chat/2`) |
+| `LLMAgent.LLMClient.OpenAI` | OpenAI-compatible chat completions client |
+| `LLMAgent.Memory` | Behaviour for agent memory backends (`init/store/fetch/delete/list/teardown`) |
+| `LLMAgent.Memory.ETS` | ETS-backed memory via Comn.Repo.Table.ETS |
+| `LLMAgent.AgentSupervisor` | DynamicSupervisor — `start_agent/stop_agent/list_agents` |
 | `LLMAgent.Events` | Public event emission with context enrichment |
 | `LLMAgent.EventBus` | Registry-based pub/sub |
 | `LLMAgent.EventLog` | In-memory immutable event log with query API |

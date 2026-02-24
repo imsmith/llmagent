@@ -30,12 +30,7 @@ defmodule LLMAgent.AgentLifecycleTest do
 
   defp simulate_llm_response(pid, content) do
     ref = make_ref()
-
-    send(pid, {ref, {:ok, %Req.Response{
-      status: 200,
-      body: %{"choices" => [%{"message" => %{"content" => content}}]}
-    }}})
-
+    send(pid, {ref, {:ok, content}})
     Process.sleep(50)
   end
 
@@ -336,6 +331,43 @@ defmodule LLMAgent.AgentLifecycleTest do
       state = get_state(:dispatch_net)
       function_msg = Enum.find(state.history, &(&1.role == "function"))
       assert function_msg != nil
+    end
+  end
+
+  # --- Memory persistence ---
+
+  describe "memory persistence" do
+    test "agent restores history from memory on restart" do
+      name = :mem_persist_test
+
+      # Pre-create the ETS table from the test process so it survives agent death.
+      # The agent's init will call memory.init which is idempotent.
+      LLMAgent.Memory.ETS.init(name)
+
+      on_exit(fn -> LLMAgent.Memory.ETS.teardown(name) end)
+
+      pid1 = start_agent(name)
+
+      LLMAgent.prompt({:global, name}, "remember this")
+      simulate_llm_response(pid1, "I will remember")
+
+      state1 = get_state(name)
+      assert length(state1.history) == 3
+
+      # Stop agent (triggers terminate which persists)
+      GenServer.stop({:global, name})
+      refute Process.alive?(pid1)
+
+      # Restart with same name — should restore history from ETS
+      {:ok, pid2} = LLMAgent.start_link(name: name)
+      on_exit(fn ->
+        if Process.alive?(pid2), do: GenServer.stop({:global, name})
+      end)
+
+      state2 = get_state(name)
+      assert length(state2.history) == 3
+      assert Enum.at(state2.history, 1).content == "remember this"
+      assert Enum.at(state2.history, 2).content == "I will remember"
     end
   end
 

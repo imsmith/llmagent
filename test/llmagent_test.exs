@@ -21,10 +21,9 @@ defmodule LLMAgentTest do
 
   defp simulate_llm_response(pid, content) do
     # Simulate an LLM response arriving as a task result.
-    # We create a fake ref since handle_info demonitors it.
+    # The LLMClient now returns {:ok, content_string} directly.
     ref = make_ref()
-    send(pid, {ref, {:ok, %Req.Response{status: 200, body: %{"choices" => [%{"message" => %{"content" => content}}]}}}})
-    # Give the GenServer a moment to process
+    send(pid, {ref, {:ok, content}})
     Process.sleep(50)
   end
 

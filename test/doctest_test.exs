@@ -7,6 +7,15 @@ defmodule LLMAgent.DoctestTest do
   doctest LLMAgent.Events
   doctest LLMAgent.RolePrompt
 
+  # LLM Client
+  doctest LLMAgent.LLMClient.OpenAI
+
+  # Memory
+  doctest LLMAgent.Memory.ETS
+
+  # Supervisor
+  doctest LLMAgent.AgentSupervisor
+
   # Registries
   doctest LLMAgent.Tools
   doctest LLMAgent.Utils

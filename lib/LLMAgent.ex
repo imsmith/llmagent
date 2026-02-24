@@ -26,14 +26,30 @@ defmodule LLMAgent do
 
   @impl true
   def init(opts) do
+    name = Keyword.get(opts, :name, __MODULE__)
     role = Keyword.get(opts, :role, :default)
+    memory = Keyword.get(opts, :memory, LLMAgent.Memory.ETS)
+    llm_client = Keyword.get(opts, :llm_client, LLMAgent.LLMClient.OpenAI)
+
+    memory.init(name)
+
+    history =
+      case memory.fetch(name, :history) do
+        {:ok, saved_history} -> saved_history
+        {:error, :not_found} -> [%{role: "system", content: RolePrompt.get(role)}]
+      end
 
     state = %{
+      name: name,
       role: role,
       model: Keyword.get(opts, :model, @default_model),
       api_host: Keyword.get(opts, :api_host, @default_api_host),
-      history: [%{role: "system", content: RolePrompt.get(role)}]
+      llm_client: llm_client,
+      memory: memory,
+      history: history
     }
+
+    memory.store(name, :history, state.history)
 
     {:ok, state}
   end
@@ -45,7 +61,7 @@ defmodule LLMAgent do
   end
 
   @impl true
-  def handle_info({ref, {:ok, %Req.Response{body: %{"choices" => [%{"message" => %{"content" => content}}]}}}}, state) do
+  def handle_info({ref, {:ok, content}}, state) when is_binary(content) do
     Process.demonitor(ref, [:flush])
 
     Events.emit(:llm_response, "agent.llm_response", %{
@@ -91,6 +107,16 @@ defmodule LLMAgent do
     {:noreply, updated}
   end
 
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
+    {:noreply, state}
+  end
+
+  @impl true
+  def terminate(_reason, state) do
+    state.memory.store(state.name, :history, state.history)
+    :ok
+  end
+
   ## Prompt Logic
 
   defp do_prompt(user_input, state) do
@@ -109,8 +135,10 @@ defmodule LLMAgent do
 
     updated = append_message(state, "user", user_input)
 
+    client_opts = %{api_host: updated.api_host, model: updated.model, timeout: 120_000}
+
     Task.Supervisor.async(LLMAgent.TaskSup, fn ->
-      call_llm(updated.api_host, updated.model, updated.history)
+      updated.llm_client.chat(updated.history, client_opts)
     end)
 
     updated
@@ -162,14 +190,9 @@ defmodule LLMAgent do
   ## Helpers
 
   defp append_message(state, role, content) do
-    update_in(state.history, &(&1 ++ [%{role: role, content: content}]))
-  end
-
-  defp call_llm(api_host, model, messages) do
-    Req.post("#{api_host}/chat/completions",
-      json: %{model: model, messages: messages},
-      receive_timeout: 120_000
-    )
+    updated = update_in(state.history, &(&1 ++ [%{role: role, content: content}]))
+    state.memory.store(state.name, :history, updated.history)
+    updated
   end
 
   defp parse_tool_call(content) do

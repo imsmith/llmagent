@@ -17,13 +17,15 @@ defmodule LLMAgent.Application do
     children = [
       {Task.Supervisor, name: LLMAgent.TaskSup},
       {LLMAgent.Tools.Inotify.Watcher, []},
-      {LLMAgent, agent_opts},
+      {DynamicSupervisor, name: LLMAgent.AgentSupervisor, strategy: :one_for_one},
       {Registry, keys: :duplicate, name: LLMAgent.EventBus},
       {LLMAgent.EventLog, []}
     ]
 
     opts = [strategy: :one_for_one, name: LLMAgent.Supervisor]
-    Supervisor.start_link(children, opts)
+    {:ok, sup} = Supervisor.start_link(children, opts)
+    LLMAgent.AgentSupervisor.start_agent(agent_opts)
+    {:ok, sup}
   end
 
   defp parse_role(role) when is_atom(role), do: role
