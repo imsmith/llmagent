@@ -33,11 +33,7 @@ defmodule LLMAgent do
 
     memory.init(name)
 
-    history =
-      case memory.fetch(name, :history) do
-        {:ok, saved_history} -> saved_history
-        {:error, :not_found} -> [%{role: "system", content: RolePrompt.get(role)}]
-      end
+    {history, restored?} = restore_history(name, role, memory)
 
     state = %{
       name: name,
@@ -49,9 +45,30 @@ defmodule LLMAgent do
       history: history
     }
 
+    unless restored? do
+      Events.emit(:message, "agent.message", %{
+        agent_id: name,
+        role: "system",
+        content: hd(history).content
+      }, __MODULE__)
+    end
+
     memory.store(name, :history, state.history)
 
     {:ok, state}
+  end
+
+  defp restore_history(name, role, memory) do
+    case LLMAgent.DurableLog.messages_for(name) do
+      messages when is_list(messages) and messages != [] ->
+        {messages, true}
+
+      _ ->
+        case memory.fetch(name, :history) do
+          {:ok, saved} when saved != [] -> {saved, true}
+          _ -> {[%{role: "system", content: RolePrompt.get(role)}], false}
+        end
+    end
   end
 
   @impl true
@@ -192,6 +209,13 @@ defmodule LLMAgent do
   defp append_message(state, role, content) do
     updated = update_in(state.history, &(&1 ++ [%{role: role, content: content}]))
     state.memory.store(state.name, :history, updated.history)
+
+    Events.emit(:message, "agent.message", %{
+      agent_id: state.name,
+      role: role,
+      content: content
+    }, __MODULE__)
+
     updated
   end
 

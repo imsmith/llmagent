@@ -4,6 +4,7 @@ defmodule LLMAgentTest do
   alias LLMAgent.EventLog
   setup do
     EventLog.clear()
+    LLMAgent.DurableLog.clear()
     :ok
   end
 
@@ -308,6 +309,27 @@ defmodule LLMAgentTest do
       tool_events = EventLog.for_topic("tool.bash")
       assert length(tool_events) >= 1
       assert hd(tool_events).data.result == :error
+    end
+
+    test "message events are emitted on prompt and response" do
+      pid = start_agent(:events_messages)
+
+      LLMAgent.prompt({:global, :events_messages}, "test message events")
+      simulate_llm_response(pid, "got it")
+
+      message_events = EventLog.for_topic("agent.message")
+
+      # system prompt + user prompt + assistant response
+      assert length(message_events) >= 3
+
+      roles = Enum.map(message_events, & &1.data.role)
+      assert "system" in roles
+      assert "user" in roles
+      assert "assistant" in roles
+
+      user_evt = Enum.find(message_events, &(&1.data.role == "user"))
+      assert user_evt.data.content == "test message events"
+      assert user_evt.data.agent_id == :events_messages
     end
 
     test "all events have timestamps and source" do

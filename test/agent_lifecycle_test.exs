@@ -11,6 +11,7 @@ defmodule LLMAgent.AgentLifecycleTest do
 
   setup do
     EventLog.clear()
+    LLMAgent.DurableLog.clear()
     :ok
   end
 
@@ -368,6 +369,43 @@ defmodule LLMAgent.AgentLifecycleTest do
       assert length(state2.history) == 3
       assert Enum.at(state2.history, 1).content == "remember this"
       assert Enum.at(state2.history, 2).content == "I will remember"
+    end
+
+    test "agent restores history from DurableLog on restart" do
+      name = :durable_persist_test
+
+      LLMAgent.Memory.ETS.init(name)
+      on_exit(fn -> LLMAgent.Memory.ETS.teardown(name) end)
+
+      pid1 = start_agent(name)
+
+      LLMAgent.prompt({:global, name}, "durable memory")
+      simulate_llm_response(pid1, "persisted via durable log")
+      Process.sleep(50)
+
+      state1 = get_state(name)
+      assert length(state1.history) == 3
+
+      GenServer.stop({:global, name})
+      refute Process.alive?(pid1)
+
+      # Clear ETS so the only source is DurableLog
+      LLMAgent.Memory.ETS.delete(name, :history)
+
+      {:ok, pid2} = LLMAgent.start_link(name: name)
+      on_exit(fn ->
+        if Process.alive?(pid2), do: GenServer.stop({:global, name})
+      end)
+
+      state2 = get_state(name)
+      assert length(state2.history) == 3
+      assert Enum.at(state2.history, 0).role == "system"
+      assert Enum.at(state2.history, 1).content == "durable memory"
+      assert Enum.at(state2.history, 2).content == "persisted via durable log"
+
+      # Verify DurableLog has the messages
+      messages = LLMAgent.DurableLog.messages_for(name)
+      assert length(messages) == 3
     end
   end
 

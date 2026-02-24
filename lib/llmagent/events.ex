@@ -56,6 +56,7 @@ defmodule LLMAgent.Events do
     data = attach_context(data)
     event = EventStruct.new(type, topic, data, source)
     LLMAgent.EventLog.record(event)
+    LLMAgent.DurableLog.record(event)
     LLMAgent.EventBus.broadcast(topic, event)
     :ok
   rescue

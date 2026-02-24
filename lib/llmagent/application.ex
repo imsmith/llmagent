@@ -19,7 +19,8 @@ defmodule LLMAgent.Application do
       {LLMAgent.Tools.Inotify.Watcher, []},
       {DynamicSupervisor, name: LLMAgent.AgentSupervisor, strategy: :one_for_one},
       {Registry, keys: :duplicate, name: LLMAgent.EventBus},
-      {LLMAgent.EventLog, []}
+      {LLMAgent.EventLog, []},
+      {LLMAgent.DurableLog, []}
     ]
 
     opts = [strategy: :one_for_one, name: LLMAgent.Supervisor]
