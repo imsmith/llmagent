@@ -21,6 +21,7 @@ User Prompt
 ┌──────────┐                         ┌──────────────┐
 │ EventLog │◀────────────────────────│  10 Tools    │
 │ EventBus │                         └──────────────┘
+│DurableLog│
 └──────────┘
 ```
 
@@ -32,7 +33,25 @@ The agent runs as a GenServer. When it receives a prompt, it:
 4. Appends the result to history and loops back to the LLM
 5. Emits structured events at every step — all enriched with context for tracing
 
+Every message (system prompt, user input, assistant response, tool result) is emitted as an `agent.message` event, making the event stream the single source of truth for conversation history. The DurableLog persists all events to DETS so history survives restarts.
+
 Error and event types come from [Comn](https://github.com/imsmith/comn), the shared infrastructure library.
+
+## Supervision Tree
+
+```
+LLMAgent.Supervisor (one_for_one)
+├── Task.Supervisor (LLMAgent.TaskSup)
+├── LLMAgent.Tools.Inotify.Watcher
+├── DynamicSupervisor (LLMAgent.AgentSupervisor)
+│   ├── LLMAgent (name: LLMAgent)       ← default agent, started by Application
+│   └── LLMAgent (name: :agent_2)       ← started at runtime
+├── Registry (LLMAgent.EventBus)
+├── LLMAgent.EventLog
+└── LLMAgent.DurableLog
+```
+
+Multiple agents run concurrently under `AgentSupervisor`. Each agent has its own history, role, and model configuration. Start and stop agents at runtime via `LLMAgent.AgentSupervisor.start_agent/1` and `stop_agent/1`.
 
 ## Tools
 
@@ -123,6 +142,40 @@ The LLM API must be OpenAI-compatible (`/chat/completions` endpoint). The agent 
 {"tool": "bash", "action": "exec", "args": {"command": "systemctl list-units --type=service"}}
 ```
 
+### Multiple Agents
+
+```elixir
+# Start additional agents at runtime
+LLMAgent.AgentSupervisor.start_agent(name: :researcher, role: :default, model: "gpt-4")
+LLMAgent.AgentSupervisor.start_agent(name: :ops, role: :sysadmin, model: "llama3")
+
+# Each agent maintains independent history and state
+LLMAgent.prompt({:global, :researcher}, "Summarize this log file")
+LLMAgent.prompt({:global, :ops}, "Check disk usage")
+
+# List running agents
+LLMAgent.AgentSupervisor.list_agents()
+
+# Stop an agent
+LLMAgent.AgentSupervisor.stop_agent(:researcher)
+```
+
+### Pluggable LLM Client
+
+The agent uses `LLMAgent.LLMClient.OpenAI` by default. Implement the `LLMAgent.LLMClient` behaviour (`chat/2`) to use a different backend:
+
+```elixir
+LLMAgent.start_link(name: :custom, llm_client: MyApp.OllamaClient)
+```
+
+### Pluggable Memory
+
+Agent memory defaults to `LLMAgent.Memory.ETS` (via `Comn.Repo.Table.ETS`). Implement the `LLMAgent.Memory` behaviour to swap backends:
+
+```elixir
+LLMAgent.start_link(name: :custom, memory: MyApp.RedisMemory)
+```
+
 ## Configuration
 
 | Option | Default | Description |
@@ -131,23 +184,42 @@ The LLM API must be OpenAI-compatible (`/chat/completions` endpoint). The agent 
 | `:role` | `:default` | Agent role — loads a role-specific system prompt |
 | `:model` | `"gpt-4"` | Model name passed to the LLM API |
 | `:api_host` | `"http://localhost:4000"` | Base URL of any OpenAI-compatible API |
+| `:llm_client` | `LLMAgent.LLMClient.OpenAI` | Module implementing `LLMAgent.LLMClient` behaviour |
+| `:memory` | `LLMAgent.Memory.ETS` | Module implementing `LLMAgent.Memory` behaviour |
 
 Available roles: `:default`, `:sysadmin`
 
 ## Events
 
-Every agent action emits a `Comn.Events.EventStruct` to both EventLog (in-memory queryable log) and EventBus (Registry-based pub/sub). Events are automatically enriched with `request_id`, `trace_id`, and `correlation_id` from the process-scoped `Comn.Contexts`.
+Every agent action emits a `Comn.Events.EventStruct` to EventLog (in-memory), DurableLog (DETS-backed), and EventBus (Registry-based pub/sub). Events are automatically enriched with `request_id`, `trace_id`, and `correlation_id` from the process-scoped `Comn.Contexts`.
 
 | Topic | Type | When |
 |-------|------|------|
 | `agent.prompt` | `:prompt` | User sends a prompt |
 | `agent.llm_response` | `:llm_response` | LLM responds |
 | `agent.tool_dispatch` | `:tool_dispatch` | Agent dispatches a tool call |
+| `agent.message` | `:message` | Any message appended to history (system, user, assistant, function) |
 | `agent.error` | `:error` | Any failure |
 | `tool.{name}` | `:invocation` | Tool executes (includes duration_ms) |
 | `tool.inotify` | `:watch_started` | Inotify watch opened |
 | `tool.inotify` | `:watch_stopped` | Inotify watch closed |
 | `tool.inotify.event` | `:fs_event` | Filesystem event detected |
+
+### Event-Sourced History
+
+The `agent.message` events form a complete record of every conversation. On startup, the agent reconstructs its history from the DurableLog (surviving node restarts), falling back to Memory.ETS (surviving process restarts), then to a fresh system prompt.
+
+```elixir
+# Get conversation history for an agent from the durable log
+LLMAgent.DurableLog.messages_for(:sysadmin_agent)
+# => [%{role: "system", content: "..."}, %{role: "user", content: "..."}, ...]
+
+# Get all events for an agent
+LLMAgent.DurableLog.events_for(:sysadmin_agent)
+
+# Get events since a timestamp
+LLMAgent.DurableLog.events_for(:sysadmin_agent, since: "2026-02-23T00:00:00Z")
+```
 
 ### Subscribing to Events
 
@@ -162,7 +234,7 @@ receive do
 end
 ```
 
-### Querying the Log
+### Querying the In-Memory Log
 
 ```elixir
 LLMAgent.EventLog.for_topic("agent.error")
@@ -181,6 +253,24 @@ LLMAgent.Events.emit(:my_event, "tool.mytool", %{key: "value"}, __MODULE__)
 
 Context fields are attached automatically when a `Comn.Contexts` context is set on the current process.
 
+## Key Modules
+
+| Module | Purpose |
+|--------|---------|
+| `LLMAgent` | Main GenServer — prompt handling, tool dispatch, history |
+| `LLMAgent.LLMClient` | Behaviour for LLM API clients (`chat/2`) |
+| `LLMAgent.LLMClient.OpenAI` | OpenAI-compatible chat completions client |
+| `LLMAgent.Memory` | Behaviour for agent memory backends |
+| `LLMAgent.Memory.ETS` | ETS-backed memory via `Comn.Repo.Table.ETS` |
+| `LLMAgent.AgentSupervisor` | DynamicSupervisor — `start_agent/stop_agent/list_agents` |
+| `LLMAgent.DurableLog` | DETS-backed persistent event log |
+| `LLMAgent.Events` | Event emission with context enrichment |
+| `LLMAgent.EventBus` | Registry-based pub/sub |
+| `LLMAgent.EventLog` | In-memory event log with query API |
+| `LLMAgent.Tools` | Tool registry — maps atom names to modules |
+| `LLMAgent.Tools.Inotify.Watcher` | GenServer managing inotifywait ports |
+| `LLMAgent.Tool` | Behaviour: `describe/0`, `perform/2` |
+
 ## Utilities
 
 | Utility | Actions | Description |
@@ -198,17 +288,6 @@ LLMAgent.Utils.call(:encoder, "base16", %{"data" => "hello"})
 # Or call directly
 LLMAgent.Utils.Encoder.call("base64", %{"data" => "hello"})
 # => {:ok, "aGVsbG8="}
-```
-
-## Supervision Tree
-
-```
-LLMAgent.Supervisor (one_for_one)
-├── Task.Supervisor (LLMAgent.TaskSup)
-├── LLMAgent.Tools.Inotify.Watcher
-├── LLMAgent (agent GenServer)
-├── Registry (LLMAgent.EventBus)
-└── LLMAgent.EventLog (Agent)
 ```
 
 ## Dependencies
@@ -232,7 +311,7 @@ System binaries used by tools: `bash`, `ip`, `ping`, `dig`, `ps`, `systemctl`, `
 ## Tests
 
 ```sh
-mix test    # 81 doctests, 125 tests
+mix test    # 96 doctests, 159 tests
 ```
 
-Coverage includes agent lifecycle (multi-turn tool loops, stop/restart, concurrent agents, context propagation, event ordering), all 10 tools, event wiring, context enrichment, and error handling.
+Coverage includes agent lifecycle (multi-turn tool loops, stop/restart, concurrent agents, context propagation, event ordering, memory persistence, DurableLog reconstruction), all 10 tools, event wiring, context enrichment, durable event persistence, and error handling.
