@@ -9,7 +9,7 @@ defmodule LLMAgent do
   alias Comn.Contexts
 
   @default_model "gpt-4"
-  @default_api_host "http://localhost:4000"
+  @default_api_host "http://localhost:11434/v1"
 
   ## Public API
 
@@ -189,17 +189,11 @@ defmodule LLMAgent do
   end
 
   defp dispatch_tool(tool, action, args) do
-    try do
-      tool_module = apply(Tools, tool, [])
-      Code.ensure_loaded(tool_module)
-
-      if function_exported?(tool_module, :perform, 2) do
+    case Tools.get(tool) do
+      {:ok, tool_module} ->
         tool_module.perform(action, args)
-      else
-        {:error, ErrorStruct.new("invalid_tool", "tool", "Tool does not implement perform/2")}
-      end
-    rescue
-      _ ->
+
+      {:error, :not_found} ->
         {:error, ErrorStruct.new("invalid_tool", "tool", "Tool #{tool} not found")}
     end
   end

@@ -60,4 +60,32 @@ defmodule LLMAgent.AgentSupervisor do
     |> Enum.map(fn {_, pid, _, _} -> pid end)
     |> Enum.filter(&is_pid/1)
   end
+
+  @doc """
+  List all running agents with their state information.
+
+  Returns a list of maps containing each agent's name, role, model,
+  api_host, and history length.
+
+  ## Examples
+
+      iex> agents = LLMAgent.AgentSupervisor.list_agents_with_state()
+      iex> is_list(agents)
+      true
+  """
+  def list_agents_with_state do
+    list_agents()
+    |> Enum.map(fn pid ->
+      state = :sys.get_state(pid)
+
+      %{
+        pid: pid,
+        name: state.name,
+        role: state.role,
+        model: state.model,
+        api_host: state.api_host,
+        history_length: length(state.history)
+      }
+    end)
+  end
 end
