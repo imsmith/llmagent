@@ -1,4 +1,6 @@
 defmodule LLMAgent.MixProject do
+  @moduledoc false
+
   use Mix.Project
 
   def project do
@@ -26,6 +28,7 @@ defmodule LLMAgent.MixProject do
   defp deps do
     [
       {:mix_test_watch, "~> 1.1", only: [:dev], runtime: false},
+      {:plug, "~> 1.16", only: [:test]},
       {:req, "~> 0.5.0"},
       {:jason, "~> 1.4"},
       {:b58, "~> 1.0"},
