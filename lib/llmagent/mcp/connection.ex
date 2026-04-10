@@ -144,21 +144,19 @@ defmodule LLMAgent.MCP.Connection do
   ## Private — Tool Registration
 
   defp register_tools(server_name, tools) do
-    Enum.map(tools, fn tool ->
-      atom = tool_atom(server_name, tool["name"])
-      description = build_description(tool)
+    entries =
+      Enum.map(tools, fn tool ->
+        atom = tool_atom(server_name, tool["name"])
+        entry = %{connection: server_name, tool: tool["name"], description: build_description(tool)}
+        {atom, entry}
+      end)
 
-      tool_map = :persistent_term.get(@tool_map_key, %{})
-      updated = Map.put(tool_map, atom, %{
-        connection: server_name,
-        tool: tool["name"],
-        description: description
-      })
-      :persistent_term.put(@tool_map_key, updated)
+    # Single persistent_term.put to avoid N global GCs
+    tool_map = :persistent_term.get(@tool_map_key, %{})
+    :persistent_term.put(@tool_map_key, Map.merge(tool_map, Map.new(entries)))
 
-      Tools.register(atom, ToolProxy)
-      atom
-    end)
+    Enum.each(entries, fn {atom, _} -> Tools.register(atom, ToolProxy) end)
+    Enum.map(entries, fn {atom, _} -> atom end)
   end
 
   defp unregister_tools(server_name, tool_atoms) do

@@ -39,7 +39,7 @@ defmodule LLMAgent.MCP.ToolProxy do
   defp call_connection(conn_name, mcp_tool, args) do
     case Registry.lookup(LLMAgent.MCP.Registry, conn_name) do
       [{conn_pid, _value}] ->
-        case GenServer.call(conn_pid, {:call_tool, mcp_tool, args}) do
+        case GenServer.call(conn_pid, {:call_tool, mcp_tool, args}, 30_000) do
           {:ok, result} ->
             {:ok, %{
               output: result.output,
