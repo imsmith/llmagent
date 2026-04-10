@@ -9,6 +9,7 @@ defmodule LLMAgent.MixProject do
       version: "0.3.0",
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       releases: [
         llmagent: [
@@ -24,6 +25,9 @@ defmodule LLMAgent.MixProject do
       mod: {LLMAgent.Application, []}
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   defp deps do
     [

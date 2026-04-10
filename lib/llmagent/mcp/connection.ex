@@ -28,6 +28,7 @@ defmodule LLMAgent.MCP.Connection do
 
   @impl true
   def init(opts) do
+    Process.flag(:trap_exit, true)
     name = Keyword.fetch!(opts, :name)
     transport_mod = Keyword.fetch!(opts, :transport)
     transport_opts = Keyword.get(opts, :transport_opts, [])
