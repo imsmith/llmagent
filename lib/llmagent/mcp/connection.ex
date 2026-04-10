@@ -208,5 +208,5 @@ defmodule LLMAgent.MCP.Connection do
     {id, %{state | request_id: id}}
   end
 
-  defp via(name), do: {:via, Registry, {LLMAgent.MCP.Registry, name, self()}}
+  defp via(name), do: {:via, Registry, {LLMAgent.MCP.Registry, name, nil}}
 end

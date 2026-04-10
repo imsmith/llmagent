@@ -26,10 +26,8 @@ defmodule LLMAgent.MCP.ToolProxyTest do
   describe "perform/2" do
     test "routes to connection GenServer and returns result" do
       # Start a mock GenServer that handles {:call_tool, tool, args}
-      {:ok, mock_conn} = GenServer.start_link(LLMAgent.MCP.ToolProxyTest.MockConnection, :ok)
-
-      # Register it in the MCP Registry — value is mock_conn pid
-      Registry.register(LLMAgent.MCP.Registry, :test_server, mock_conn)
+      # It self-registers in init so the key pid is the mock_conn process itself
+      {:ok, mock_conn} = GenServer.start_link(LLMAgent.MCP.ToolProxyTest.MockConnection, :test_server)
 
       # Populate the tool map
       :persistent_term.put(@tool_map_key, %{
@@ -81,7 +79,10 @@ defmodule LLMAgent.MCP.ToolProxyTest do
     @moduledoc false
     use GenServer
 
-    def init(:ok), do: {:ok, %{}}
+    def init(server_name) do
+      Registry.register(LLMAgent.MCP.Registry, server_name, nil)
+      {:ok, %{}}
+    end
 
     def handle_call({:call_tool, _tool, _args}, _from, state) do
       {:reply, {:ok, %{output: "mock response", metadata: %{}}}, state}
