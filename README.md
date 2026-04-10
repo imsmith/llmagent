@@ -1,8 +1,8 @@
 # LLMAgent
 
-A GenServer-based AI agent framework for Elixir. LLMAgent connects to any OpenAI-compatible API, dispatches tool calls to local system tools, and records structured events for every action.
+A GenServer-based AI agent framework for Elixir. LLMAgent connects to any OpenAI-compatible API, dispatches tool calls to local and remote tools, and records structured events for every action.
 
-Built for Linux system administration — the default toolset gives an LLM hands-on access to bash, files, processes, networking, systemd, D-Bus, udev, inotify, and cryptographic operations.
+Built for Linux system administration — the default toolset gives an LLM hands-on access to bash, files, processes, networking, systemd, D-Bus, udev, inotify, and cryptographic operations. External tools can be added at runtime via [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) without modifying source.
 
 **License:** AGPL-3.0
 
@@ -19,7 +19,8 @@ User Prompt
     │                                       │
     ▼                                       ▼
 ┌──────────┐                         ┌──────────────┐
-│ EventLog │◀────────────────────────│  10 Tools    │
+│ EventLog │◀────────────────────────│ 10 Tools +   │
+│ MCP Servers  │
 │ EventBus │                         └──────────────┘
 │DurableLog│
 └──────────┘
@@ -48,7 +49,11 @@ LLMAgent.Supervisor (one_for_one)
 │   └── LLMAgent (name: :agent_2)       ← started at runtime
 ├── Registry (LLMAgent.EventBus)
 ├── LLMAgent.EventLog
-└── LLMAgent.DurableLog
+├── LLMAgent.DurableLog
+├── Registry (LLMAgent.MCP.Registry)
+└── DynamicSupervisor (LLMAgent.MCP.ConnectionSupervisor)
+    ├── LLMAgent.MCP.Connection (:github)   ← started at runtime
+    └── LLMAgent.MCP.Connection (:weather)  ← started at runtime
 ```
 
 Multiple agents run concurrently under `AgentSupervisor`. Each agent has its own history, role, and model configuration. Start and stop agents at runtime via `LLMAgent.AgentSupervisor.start_agent/1` and `stop_agent/1`.
@@ -117,6 +122,69 @@ end
 ```
 
 Then register it in `LLMAgent.Tools`.
+
+### MCP Tools
+
+LLMAgent can consume tools from external [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) servers. MCP tools appear in the registry alongside native tools — the agent dispatch path is identical.
+
+```elixir
+# Connect to an MCP server
+{:ok, _pid} = LLMAgent.MCP.connect(:github,
+  url: "https://api.github.com/mcp",
+  headers: [{"authorization", "Bearer #{token}"}]
+)
+
+# Discovered tools are registered automatically
+LLMAgent.MCP.tools_for(:github)
+# => [:github_create_issue, :github_list_repos, ...]
+
+# Tool descriptions for system prompts
+LLMAgent.MCP.tool_descriptions()
+# => %{github_create_issue: "create_issue: Create a GitHub issue\n\nArgs:\n  - repo (string, required)\n  ..."}
+
+# Agents call MCP tools the same way they call native tools
+# The LLM emits: {"tool": "github_create_issue", "action": "call", "args": {"repo": "foo", "title": "bar"}}
+# The agent dispatches through ToolProxy → Connection → MCP server
+
+# Disconnect when done — unregisters all tools
+LLMAgent.MCP.disconnect(:github)
+```
+
+Each MCP connection is a supervised GenServer that:
+
+1. Performs the MCP `initialize` handshake
+2. Discovers tools via `tools/list`
+3. Registers each tool as `:{server}_{tool}` in the Tools registry
+4. Proxies `tools/call` requests through the transport
+
+Tools are namespaced by server name to avoid collisions. A `:github` server exposing `create_issue` becomes `:github_create_issue`.
+
+#### Transport
+
+The transport layer is pluggable via the `LLMAgent.MCP.Transport` behaviour. The HTTP transport (Streamable HTTP via Req) is the default. Stdio transport for local MCP servers is planned.
+
+```elixir
+# HTTP transport (default)
+LLMAgent.MCP.connect(:server, url: "https://...", headers: [...])
+
+# Custom transport
+LLMAgent.MCP.connect(:server, transport: MyApp.StdioTransport, transport_opts: [...])
+```
+
+#### Managing Connections
+
+```elixir
+# List all active connections
+LLMAgent.MCP.list_connections()
+# => [{:github, #PID<0.456.0>, %{tools: [...], protocol_version: "2025-03-26"}}]
+
+# List tools for a connection
+LLMAgent.MCP.tools_for(:github)
+# => [:github_create_issue, :github_list_repos]
+
+# Disconnect — tools are unregistered from the registry
+LLMAgent.MCP.disconnect(:github)
+```
 
 ## Usage
 
@@ -270,6 +338,11 @@ Context fields are attached automatically when a `Comn.Contexts` context is set 
 | `LLMAgent.Tools` | Tool registry — maps atom names to modules |
 | `LLMAgent.Tools.Inotify.Watcher` | GenServer managing inotifywait ports |
 | `LLMAgent.Tool` | Behaviour: `describe/0`, `perform/2` |
+| `LLMAgent.MCP` | Public API for MCP connections — `connect/disconnect/list/tools_for` |
+| `LLMAgent.MCP.Connection` | GenServer per MCP server — handshake, discovery, tool proxy |
+| `LLMAgent.MCP.ToolProxy` | Bridges MCP tools into the `Tool` behaviour |
+| `LLMAgent.MCP.Transport` | Behaviour for MCP transports (`start/1`, `send_request/2`, `close/1`) |
+| `LLMAgent.MCP.Transport.HTTP` | HTTP (Streamable HTTP) transport via Req |
 
 ## Utilities
 
@@ -311,7 +384,7 @@ System binaries used by tools: `bash`, `ip`, `ping`, `dig`, `ps`, `systemctl`, `
 ## Tests
 
 ```sh
-mix test    # 96 doctests, 159 tests
+mix test    # 102 doctests, 186 tests
 ```
 
-Coverage includes agent lifecycle (multi-turn tool loops, stop/restart, concurrent agents, context propagation, event ordering, memory persistence, DurableLog reconstruction), all 10 tools, event wiring, context enrichment, durable event persistence, and error handling.
+Coverage includes agent lifecycle (multi-turn tool loops, stop/restart, concurrent agents, context propagation, event ordering, memory persistence, DurableLog reconstruction), all 10 native tools, MCP client integration (transport, connection lifecycle, tool discovery, proxy dispatch, facade API), event wiring, context enrichment, durable event persistence, and error handling.
