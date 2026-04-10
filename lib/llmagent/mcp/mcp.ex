@@ -10,7 +10,20 @@ defmodule LLMAgent.MCP do
 
   @tool_map_key :llmagent_mcp_tool_map
 
-  @doc "Connect to an MCP server by name. Returns `{:ok, pid}` or `{:error, reason}`."
+  @doc """
+  Connect to an MCP server by name. Returns `{:ok, pid}` or `{:error, reason}`.
+
+  ## Examples
+
+      iex> {:ok, pid} = LLMAgent.MCP.connect(:doctest_connect,
+      ...>   transport: LLMAgent.MCP.Transport.Mock,
+      ...>   transport_opts: [tools: [%{"name" => "hello", "description" => "Say hello", "inputSchema" => %{"type" => "object", "properties" => %{}, "required" => []}}]]
+      ...> )
+      iex> is_pid(pid)
+      true
+      iex> LLMAgent.MCP.disconnect(:doctest_connect)
+      :ok
+  """
   def connect(name, opts \\ []) do
     transport = Keyword.get(opts, :transport, LLMAgent.MCP.Transport.HTTP)
 
@@ -30,7 +43,14 @@ defmodule LLMAgent.MCP do
     )
   end
 
-  @doc "Disconnect a named MCP connection. Returns `:ok` or `{:error, :not_found}`."
+  @doc """
+  Disconnect a named MCP connection. Returns `:ok` or `{:error, :not_found}`.
+
+  ## Examples
+
+      iex> LLMAgent.MCP.disconnect(:doctest_nonexistent)
+      {:error, :not_found}
+  """
   def disconnect(name) do
     case Registry.lookup(LLMAgent.MCP.Registry, name) do
       [{pid, _}] ->
@@ -41,7 +61,14 @@ defmodule LLMAgent.MCP do
     end
   end
 
-  @doc "List all active MCP connections as `{name, pid, info}` tuples."
+  @doc """
+  List all active MCP connections as `{name, pid, info}` tuples.
+
+  ## Examples
+
+      iex> is_list(LLMAgent.MCP.list_connections())
+      true
+  """
   def list_connections do
     LLMAgent.MCP.ConnectionSupervisor
     |> DynamicSupervisor.which_children()
@@ -59,7 +86,14 @@ defmodule LLMAgent.MCP do
     end)
   end
 
-  @doc "Return tool atoms registered for a named connection, or `{:error, :not_found}`."
+  @doc """
+  Return tool atoms registered for a named connection, or `{:error, :not_found}`.
+
+  ## Examples
+
+      iex> LLMAgent.MCP.tools_for(:doctest_nonexistent)
+      {:error, :not_found}
+  """
   def tools_for(name) do
     case Registry.lookup(LLMAgent.MCP.Registry, name) do
       [{pid, _}] ->
@@ -71,7 +105,14 @@ defmodule LLMAgent.MCP do
     end
   end
 
-  @doc "Return a map of tool atom => description string for all registered MCP tools."
+  @doc """
+  Return a map of tool atom => description string for all registered MCP tools.
+
+  ## Examples
+
+      iex> is_map(LLMAgent.MCP.tool_descriptions())
+      true
+  """
   def tool_descriptions do
     :persistent_term.get(@tool_map_key, %{})
     |> Map.new(fn {atom, %{description: desc}} -> {atom, desc} end)

@@ -21,6 +21,27 @@ defmodule LLMAgent.MCP.Connection do
   @client_info %{"name" => "LLMAgent", "version" => "0.3.0"}
   @protocol_version "2025-03-26"
 
+  @doc """
+  Start a connection GenServer linked to the calling process.
+
+  ## Options
+
+    * `:name` (required) — atom used to register the connection in `LLMAgent.MCP.Registry`
+    * `:transport` (required) — module implementing the `LLMAgent.MCP.Transport` behaviour
+    * `:transport_opts` — keyword list passed verbatim to `transport.start/1` (default `[]`)
+
+  ## Examples
+
+      iex> {:ok, pid} = LLMAgent.MCP.Connection.start_link(
+      ...>   name: :doctest_conn,
+      ...>   transport: LLMAgent.MCP.Transport.Mock,
+      ...>   transport_opts: [tools: []]
+      ...> )
+      iex> is_pid(pid)
+      true
+      iex> GenServer.stop(pid)
+      :ok
+  """
   def start_link(opts) do
     name = Keyword.fetch!(opts, :name)
     GenServer.start_link(__MODULE__, opts, name: via(name))

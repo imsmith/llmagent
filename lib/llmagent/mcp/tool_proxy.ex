@@ -56,5 +56,16 @@ defmodule LLMAgent.MCP.ToolProxy do
     end
   end
 
+  @doc """
+  Return the current MCP tool map from persistent_term storage.
+
+  Keys are tool atoms (e.g. `:my_server_tool_name`); values are maps with
+  `:connection`, `:tool`, and `:description` keys.
+
+  ## Examples
+
+      iex> is_map(LLMAgent.MCP.ToolProxy.tool_map())
+      true
+  """
   def tool_map, do: :persistent_term.get(@tool_map_key, %{})
 end
