@@ -15,6 +15,22 @@ defmodule LLMAgent.TupleSpace.Space do
   alias LLMAgent.TupleSpace.Pattern
   alias LLMAgent.Events
 
+  @doc """
+  Start a space GenServer linked to the calling process.
+
+  ## Options
+
+    * `:name` (required) — atom identifying the space, used for Registry lookup and ETS table naming
+
+  ## Examples
+
+      iex> name = :"doctest_space_#{System.unique_integer([:positive])}"
+      iex> {:ok, pid} = LLMAgent.TupleSpace.Space.start_link(name: name)
+      iex> is_pid(pid)
+      true
+      iex> GenServer.stop(pid)
+      :ok
+  """
   def start_link(opts) do
     name = Keyword.fetch!(opts, :name)
     GenServer.start_link(__MODULE__, opts, name: via(name))

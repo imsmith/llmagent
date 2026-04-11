@@ -51,9 +51,13 @@ LLMAgent.Supervisor (one_for_one)
 ├── LLMAgent.EventLog
 ├── LLMAgent.DurableLog
 ├── Registry (LLMAgent.MCP.Registry)
-└── DynamicSupervisor (LLMAgent.MCP.ConnectionSupervisor)
-    ├── LLMAgent.MCP.Connection (:github)   ← started at runtime
-    └── LLMAgent.MCP.Connection (:weather)  ← started at runtime
+├── DynamicSupervisor (LLMAgent.MCP.ConnectionSupervisor)
+│   ├── LLMAgent.MCP.Connection (:github)   ← started at runtime
+│   └── LLMAgent.MCP.Connection (:weather)  ← started at runtime
+├── Registry (LLMAgent.TupleSpace.Registry)
+└── DynamicSupervisor (LLMAgent.TupleSpace.Supervisor)
+    ├── LLMAgent.TupleSpace.Space (:default)   ← started by Application
+    └── LLMAgent.TupleSpace.Space (:tasks)     ← started at runtime
 ```
 
 Multiple agents run concurrently under `AgentSupervisor`. Each agent has its own history, role, and model configuration. Start and stop agents at runtime via `LLMAgent.AgentSupervisor.start_agent/1` and `stop_agent/1`.
@@ -158,6 +162,56 @@ Each MCP connection is a supervised GenServer that:
 4. Proxies `tools/call` requests through the transport
 
 Tools are namespaced by server name to avoid collisions. A `:github` server exposing `create_issue` becomes `:github_create_issue`.
+
+### Tuple Space
+
+LLMAgent includes a Linda-style tuple space for multi-agent coordination. Agents write, read, and take tuples from named spaces using pattern matching with `:_` wildcards.
+
+```elixir
+# Write a tuple
+LLMAgent.TupleSpace.out({:task, :pending, "build_report"})
+
+# Blocking destructive read — takes the tuple, blocks until match
+{:ok, {:task, :pending, "build_report"}} =
+  LLMAgent.TupleSpace.in_({:task, :pending, :_}, 5_000)
+
+# Blocking non-destructive read — peeks without removing
+{:ok, {:task, :pending, "build_report"}} =
+  LLMAgent.TupleSpace.rd({:task, :pending, :_}, 5_000)
+
+# Non-blocking variants return immediately
+{:ok, tuple} = LLMAgent.TupleSpace.in_nowait({:task, :pending, :_})
+{:error, :no_match} = LLMAgent.TupleSpace.rd_nowait({:task, :done, :_})
+```
+
+Backed by ETS for concurrent reads and a GenServer per space for serialized mutations. Blocking operations use deferred GenServer replies — the caller blocks transparently until a matching tuple appears or the timeout expires.
+
+#### Named Spaces
+
+```elixir
+# Start a named space
+{:ok, _} = LLMAgent.TupleSpace.start_space(:tasks)
+
+# Operations on named spaces
+LLMAgent.TupleSpace.out(:tasks, {:job, "compile"})
+{:ok, {:job, "compile"}} = LLMAgent.TupleSpace.in_(:tasks, {:job, :_}, 5_000)
+
+# List and stop
+LLMAgent.TupleSpace.list_spaces()  # => [:default, :tasks]
+LLMAgent.TupleSpace.stop_space(:tasks)
+```
+
+A `:default` space starts automatically on application boot.
+
+#### Pattern Matching
+
+Patterns are tuples with `:_` as a wildcard. Compiled to ETS match specs for native performance.
+
+```elixir
+{:task, :pending, :_}      # match any pending task
+{:result, :_, :_}          # match any result tuple
+{:task, :pending, "build"} # exact match
+```
 
 #### Transport
 
@@ -343,6 +397,9 @@ Context fields are attached automatically when a `Comn.Contexts` context is set 
 | `LLMAgent.MCP.ToolProxy` | Bridges MCP tools into the `Tool` behaviour |
 | `LLMAgent.MCP.Transport` | Behaviour for MCP transports (`start/1`, `send_request/2`, `close/1`) |
 | `LLMAgent.MCP.Transport.HTTP` | HTTP (Streamable HTTP) transport via Req |
+| `LLMAgent.TupleSpace` | Public API for tuple space coordination — `out/in_/rd` + space management |
+| `LLMAgent.TupleSpace.Space` | GenServer per named space — ETS storage, blocking, waiters |
+| `LLMAgent.TupleSpace.Pattern` | Pattern compilation and matching — `:_` wildcards to ETS match specs |
 
 ## Utilities
 
@@ -384,7 +441,7 @@ System binaries used by tools: `bash`, `ip`, `ping`, `dig`, `ps`, `systemctl`, `
 ## Tests
 
 ```sh
-mix test    # 102 doctests, 186 tests
+mix test    # 109 doctests, 232 tests
 ```
 
 Coverage includes agent lifecycle (multi-turn tool loops, stop/restart, concurrent agents, context propagation, event ordering, memory persistence, DurableLog reconstruction), all 10 native tools, MCP client integration (transport, connection lifecycle, tool discovery, proxy dispatch, facade API), event wiring, context enrichment, durable event persistence, and error handling.

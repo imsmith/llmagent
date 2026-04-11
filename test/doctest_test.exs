@@ -1,4 +1,5 @@
 defmodule LLMAgent.DoctestTest do
+  @moduledoc false
   use ExUnit.Case, async: false
 
   # Core
@@ -15,6 +16,10 @@ defmodule LLMAgent.DoctestTest do
 
   # Supervisor
   doctest LLMAgent.AgentSupervisor
+
+  # Tuple Space
+  doctest LLMAgent.TupleSpace
+  doctest LLMAgent.TupleSpace.Space
 
   # Registries
   doctest LLMAgent.Tools
