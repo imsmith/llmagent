@@ -23,7 +23,9 @@ defmodule LLMAgent.Application do
       {LLMAgent.EventLog, []},
       {LLMAgent.DurableLog, []},
       {Registry, keys: :unique, name: LLMAgent.MCP.Registry},
-      {DynamicSupervisor, name: LLMAgent.MCP.ConnectionSupervisor, strategy: :one_for_one}
+      {DynamicSupervisor, name: LLMAgent.MCP.ConnectionSupervisor, strategy: :one_for_one},
+      {Registry, keys: :unique, name: LLMAgent.TupleSpace.Registry},
+      {DynamicSupervisor, name: LLMAgent.TupleSpace.Supervisor, strategy: :one_for_one}
     ]
 
     opts = [strategy: :one_for_one, name: LLMAgent.Supervisor]
