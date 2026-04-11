@@ -31,6 +31,7 @@ defmodule LLMAgent.Application do
     opts = [strategy: :one_for_one, name: LLMAgent.Supervisor]
     {:ok, sup} = Supervisor.start_link(children, opts)
     LLMAgent.AgentSupervisor.start_agent(agent_opts)
+    LLMAgent.TupleSpace.start_space(:default)
     {:ok, sup}
   end
 
