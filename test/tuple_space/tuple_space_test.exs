@@ -43,6 +43,9 @@ defmodule LLMAgent.TupleSpaceTest do
 
     test "out and rd_nowait" do
       :ok = TupleSpace.out({:test, "value"})
+      # rd_nowait bypasses GenServer — sync the cast first via a GenServer call
+      assert {:ok, {:test, "value"}} = TupleSpace.rd({:test, :_}, 1_000)
+      # Now rd_nowait sees it in ETS
       assert {:ok, {:test, "value"}} = TupleSpace.rd_nowait({:test, :_})
       assert {:ok, {:test, "value"}} = TupleSpace.rd_nowait({:test, :_})
     end
