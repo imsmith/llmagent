@@ -24,3 +24,6 @@ llmagent-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# Runtime data (DurableLog DETS files, etc.)
+/data/
