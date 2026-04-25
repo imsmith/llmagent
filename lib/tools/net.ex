@@ -8,12 +8,28 @@ defmodule LLMAgent.Tools.Net do
 
   ## Examples
 
-      iex> LLMAgent.Tools.Net.describe()
-      "Inspects network interfaces, IPs, DNS, and connectivity status."
+      iex> desc = LLMAgent.Tools.Net.describe()
+      iex> desc =~ "list_interfaces"
+      true
   """
   @impl true
   def describe do
-    "Inspects network interfaces, IPs, DNS, and connectivity status."
+    """
+    Inspects network interfaces, IPs, DNS, and connectivity status.
+
+    Actions:
+      - list_interfaces: List all network interfaces with IP addresses.
+        Args: none
+        Example: {"tool": "net", "action": "list_interfaces", "args": {}}
+
+      - ping: Ping a host and return reachability + round-trip time.
+        Args: {"host": "<hostname or IP>"}
+        Example: {"tool": "net", "action": "ping", "args": {"host": "8.8.8.8"}}
+
+      - resolve: DNS-resolve a hostname to IP addresses.
+        Args: {"host": "<hostname>"}
+        Example: {"tool": "net", "action": "resolve", "args": {"host": "google.com"}}
+    """
   end
 
   @doc ~S"""
