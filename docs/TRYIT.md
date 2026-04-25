@@ -1,0 +1,196 @@
+# Taking LLMAgent for a Spin
+
+## Prerequisites
+
+- Elixir ~> 1.16, Erlang/OTP
+- An OpenAI-compatible API endpoint (Ollama is easiest)
+- `inotifywait` for inotify tool (optional — `apt install inotify-tools`)
+
+## 1. Get Ollama Running
+
+Ollama exposes an OpenAI-compatible endpoint at `http://localhost:11434/v1`.
+
+```sh
+# Install: https://ollama.com
+ollama pull llama3.2
+ollama serve   # if not already running as a service
+```
+
+Verify it's up:
+
+```sh
+curl -s http://localhost:11434/v1/chat/completions \
+  -d '{"model":"llama3.2","messages":[{"role":"user","content":"say hi"}]}' \
+  -H 'Content-Type: application/json' | jq .choices[0].message.content
+```
+
+## 2. Start the Agent
+
+```sh
+cd ~/github/llmagent
+iex -S mix
+```
+
+The application starts a default agent automatically. It defaults to `gpt-4` on `localhost:4000`, which isn't what you want. Start a new one pointed at Ollama:
+
+```elixir
+# Stop the default agent (it'll fail to connect to localhost:4000, harmless but noisy)
+LLMAgent.AgentSupervisor.stop_agent(LLMAgent)
+
+# Start one pointed at Ollama
+LLMAgent.AgentSupervisor.start_agent(
+  name: :test,
+  role: :sysadmin,
+  model: "llama3.2",
+  api_host: "http://localhost:11434/v1"
+)
+```
+
+Or set env vars before starting:
+
+```sh
+LLMAGENT_MODEL=llama3.2 LLMAGENT_API_HOST=http://localhost:11434/v1 LLMAGENT_ROLE=sysadmin iex -S mix
+```
+
+This configures the default agent at startup, no need to stop/restart.
+
+## 3. Send a Prompt
+
+```elixir
+LLMAgent.prompt({:global, :test}, "What's the hostname of this machine?")
+```
+
+This returns `:ok` immediately — the LLM call is async. The agent will:
+
+1. Send the conversation history (system prompt + your message) to Ollama
+2. If Ollama responds with tool-call JSON like `{"tool":"bash","action":"exec","args":{"command":"hostname"}}`, the agent executes it
+3. The tool result gets fed back to the LLM for another round
+4. When the LLM responds with plain text (not JSON), the loop ends
+
+## 4. Inspect State
+
+```elixir
+# Check the conversation history
+:sys.get_state({:global, :test})
+|> Map.get(:history)
+|> Enum.each(fn msg -> IO.puts("#{msg.role}: #{String.slice(msg.content, 0, 120)}") end)
+
+# Check events
+LLMAgent.EventLog.all()
+|> Enum.each(fn e -> IO.puts("#{e.topic} [#{e.type}]") end)
+
+# Check durable log
+LLMAgent.DurableLog.messages_for(:test)
+
+# Check events for this agent only
+LLMAgent.DurableLog.events_for(:test)
+```
+
+## 5. Try the Tool Loop
+
+Prompts that should trigger tool use with the sysadmin role:
+
+```elixir
+# Should trigger bash tool
+LLMAgent.prompt({:global, :test}, "List the files in /tmp")
+
+# Should trigger net tool (if the LLM figures out the JSON format)
+LLMAgent.prompt({:global, :test}, "Ping localhost once")
+
+# Should trigger proc tool
+LLMAgent.prompt({:global, :test}, "What processes are using the most memory?")
+
+# Should trigger crypto tool
+LLMAgent.prompt({:global, :test}, "Generate a SHA256 hash of the string 'hello world'")
+```
+
+Give it a second or two after each prompt, then check history:
+
+```elixir
+:sys.get_state({:global, :test}).history |> List.last()
+```
+
+## 6. Subscribe to Events in Real Time
+
+Open a second terminal, or run this before sending prompts:
+
+```elixir
+# In iex, subscribe to all tool events
+for topic <- ["tool.bash", "tool.crypto", "tool.net", "tool.file", "agent.prompt", "agent.llm_response", "agent.tool_dispatch", "agent.message"] do
+  LLMAgent.EventBus.subscribe(topic)
+end
+
+# Now events arrive in your mailbox
+flush()
+```
+
+## 7. Multi-Agent
+
+```elixir
+LLMAgent.AgentSupervisor.start_agent(
+  name: :agent_two,
+  role: :default,
+  model: "llama3.2",
+  api_host: "http://localhost:11434/v1"
+)
+
+LLMAgent.prompt({:global, :agent_two}, "What is the capital of France?")
+
+# Histories are isolated
+LLMAgent.DurableLog.messages_for(:test)
+LLMAgent.DurableLog.messages_for(:agent_two)
+```
+
+## 8. Restart Persistence
+
+Test that DurableLog survives a restart:
+
+```elixir
+# Send a prompt and let it complete
+LLMAgent.prompt({:global, :test}, "What's 2 + 2?")
+Process.sleep(3000)
+
+# Check history length
+length(LLMAgent.DurableLog.messages_for(:test))
+
+# Kill and restart the agent
+LLMAgent.AgentSupervisor.stop_agent(:test)
+LLMAgent.AgentSupervisor.start_agent(
+  name: :test,
+  role: :sysadmin,
+  model: "llama3.2",
+  api_host: "http://localhost:11434/v1"
+)
+
+# History should be restored from DurableLog
+:sys.get_state({:global, :test}).history |> length()
+```
+
+## What to Watch For
+
+**LLM doesn't produce valid tool JSON**: The sysadmin prompt tells the LLM the exact JSON format. Smaller models may not comply consistently. If the LLM responds with markdown-wrapped JSON or explanatory text around the JSON, the agent treats it as a plain text response (no tool dispatch). Try a larger model (`llama3.1:70b`, `qwen2.5:32b`) if tool calls aren't firing.
+
+**No auth header**: The OpenAI client doesn't send an `Authorization` header. This is fine for Ollama. For OpenAI, Anthropic, or other authenticated APIs, you'd need to implement a custom `LLMClient` that adds the bearer token.
+
+**Async responses**: `prompt/2` returns `:ok` immediately. The LLM response arrives asynchronously via a Task. There's no callback or return value — check history or subscribe to events to see results.
+
+**DETS file location**: Events persist to `data/llmagent_events.dets` in the project root. Delete this file to start fresh.
+
+## Cleanup
+
+```elixir
+# Clear durable log
+LLMAgent.DurableLog.clear()
+
+# Clear in-memory event log
+LLMAgent.EventLog.clear()
+
+# Stop agents
+LLMAgent.AgentSupervisor.stop_agent(:test)
+LLMAgent.AgentSupervisor.stop_agent(:agent_two)
+```
+
+```sh
+# Remove DETS file
+rm data/llmagent_events.dets
+```
