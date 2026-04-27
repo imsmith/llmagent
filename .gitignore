@@ -27,3 +27,6 @@ llmagent-*.tar
 
 # Runtime data (DurableLog DETS files, etc.)
 /data/
+
+# Git worktrees (isolated workspaces)
+/.worktrees/
