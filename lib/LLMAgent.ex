@@ -94,7 +94,7 @@ defmodule LLMAgent do
       {:tool_call, tool, action, args} ->
         Events.emit(:tool_dispatch, "agent.tool_dispatch", %{tool: tool, action: action}, __MODULE__)
 
-        result = timed_dispatch(tool, action, args)
+        result = timed_dispatch(tool, action, args, state.allowed_tools)
         followup = format_tool_result(result)
 
         updated =
@@ -169,13 +169,20 @@ defmodule LLMAgent do
 
   ## Tool Dispatch
 
-  defp timed_dispatch(tool, action, args) do
+  defp timed_dispatch(tool, action, args, allowed) do
     Contexts.put(:tool, tool)
     Contexts.put(:action, action)
 
     start = System.monotonic_time(:millisecond)
 
-    result = dispatch_tool(tool, action, args)
+    result =
+      if tool_allowed?(tool, allowed) do
+        dispatch_tool(tool, action, args)
+      else
+        {:error,
+         ErrorStruct.new("tool_not_permitted", "tool",
+           "tool :#{tool} not permitted", "Use one of the allowed tools")}
+      end
 
     duration_ms = System.monotonic_time(:millisecond) - start
 
@@ -193,6 +200,9 @@ defmodule LLMAgent do
 
     result
   end
+
+  defp tool_allowed?(_tool, :all), do: true
+  defp tool_allowed?(tool, allowed) when is_list(allowed), do: tool in allowed
 
   defp dispatch_tool(tool, action, args) do
     case Tools.get(tool) do

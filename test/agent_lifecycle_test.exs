@@ -482,4 +482,40 @@ defmodule LLMAgent.AgentLifecycleTest do
       # unit tests in Task 8 (test/tools/agent_tool_test.exs).
     end
   end
+
+  describe "tool whitelist enforcement" do
+    test "tool not in whitelist returns error without dispatching" do
+      pid = start_agent(:wl_block, allowed_tools: [:file])
+
+      simulate_llm_response(pid, tool_json("bash", "exec", %{"command" => "echo nope"}))
+      Process.sleep(50)
+
+      state = get_state(:wl_block)
+      function_msg = Enum.find(state.history, &(&1.role == "function"))
+      assert function_msg != nil
+      assert function_msg.content =~ "tool :bash not permitted"
+    end
+
+    test "tool in whitelist dispatches normally" do
+      pid = start_agent(:wl_allow, allowed_tools: [:bash])
+
+      simulate_llm_response(pid, tool_json("bash", "exec", %{"command" => "echo allowed"}))
+      Process.sleep(50)
+
+      state = get_state(:wl_allow)
+      function_msg = Enum.find(state.history, &(&1.role == "function"))
+      assert function_msg.content =~ "allowed"
+    end
+
+    test ":all whitelist permits any tool (default)" do
+      pid = start_agent(:wl_all)
+
+      simulate_llm_response(pid, tool_json("bash", "exec", %{"command" => "echo any"}))
+      Process.sleep(50)
+
+      state = get_state(:wl_all)
+      function_msg = Enum.find(state.history, &(&1.role == "function"))
+      assert function_msg.content =~ "any"
+    end
+  end
 end
