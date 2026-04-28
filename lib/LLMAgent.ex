@@ -107,7 +107,16 @@ defmodule LLMAgent do
 
       :not_a_tool_call ->
         updated = append_message(state, "assistant", content)
-        {:noreply, updated}
+
+        case updated.parent do
+          nil ->
+            {:noreply, updated}
+
+          _parent ->
+            LLMAgent.TupleSpace.out({:agent_result, updated.name, content})
+            send(self(), :child_complete_stop)
+            {:noreply, updated}
+        end
     end
   end
 
@@ -126,6 +135,10 @@ defmodule LLMAgent do
   def handle_info({:prompt, content}, state) do
     updated = do_prompt(content, state)
     {:noreply, updated}
+  end
+
+  def handle_info(:child_complete_stop, state) do
+    {:stop, :normal, state}
   end
 
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do

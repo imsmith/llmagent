@@ -518,4 +518,35 @@ defmodule LLMAgent.AgentLifecycleTest do
       assert function_msg.content =~ "any"
     end
   end
+
+  describe "child completion writes to tuple space" do
+    setup do
+      LLMAgent.TupleSpace.stop_space(:default)
+      {:ok, _} = LLMAgent.TupleSpace.start_space(:default)
+      :ok
+    end
+
+    test "child writes {:agent_result, name, content} on non-tool response" do
+      pid = start_agent(:child_complete, parent: :some_parent)
+
+      simulate_llm_response(pid, "the answer is 42")
+      Process.sleep(150)
+
+      assert {:ok, {:agent_result, :child_complete, "the answer is 42"}} =
+               LLMAgent.TupleSpace.in_nowait({:agent_result, :child_complete, :_})
+
+      refute Process.alive?(pid)
+    end
+
+    test "root agent does not write to tuple space and stays alive" do
+      pid = start_agent(:root_complete)
+
+      simulate_llm_response(pid, "I am root, I keep going")
+      Process.sleep(80)
+
+      assert {:error, :no_match} =
+               LLMAgent.TupleSpace.in_nowait({:agent_result, :root_complete, :_})
+      assert Process.alive?(pid)
+    end
+  end
 end
