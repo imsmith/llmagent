@@ -596,4 +596,27 @@ defmodule LLMAgent.AgentLifecycleTest do
                LLMAgent.TupleSpace.in_nowait({:agent_error, :root_crash, :_})
     end
   end
+
+  describe "orphan handling" do
+    test "child emits agent.orphaned when parent dies and continues running" do
+      LLMAgent.EventBus.subscribe("agent.orphaned")
+
+      parent_name = :orph_parent
+      child_name = :orph_child
+
+      _parent_pid = start_agent(parent_name)
+      child_pid = start_agent(child_name, parent: parent_name)
+
+      assert Process.alive?(child_pid)
+
+      GenServer.stop({:global, parent_name})
+      Process.sleep(50)
+
+      assert_receive {:event, "agent.orphaned", %Comn.Events.EventStruct{} = evt}, 1_000
+      assert evt.data.agent_id == :orph_child
+      assert evt.data.parent == :orph_parent
+
+      assert Process.alive?(child_pid)
+    end
+  end
 end

@@ -33,6 +33,16 @@ defmodule LLMAgent do
     parent = Keyword.get(opts, :parent, nil)
     allowed_tools = Keyword.get(opts, :allowed_tools, :all)
 
+    parent_ref =
+      case parent do
+        nil -> nil
+        parent_name ->
+          case GenServer.whereis({:global, parent_name}) do
+            nil -> nil
+            pid -> Process.monitor(pid)
+          end
+      end
+
     memory.init(name)
 
     {history, restored?} = restore_history(name, role, memory)
@@ -46,7 +56,8 @@ defmodule LLMAgent do
       memory: memory,
       history: history,
       parent: parent,
-      allowed_tools: allowed_tools
+      allowed_tools: allowed_tools,
+      parent_ref: parent_ref
     }
 
     unless restored? do
@@ -139,6 +150,15 @@ defmodule LLMAgent do
 
   def handle_info(:child_complete_stop, state) do
     {:stop, :normal, state}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{parent_ref: ref} = state) do
+    Events.emit(:orphaned, "agent.orphaned", %{
+      agent_id: state.name,
+      parent: state.parent
+    }, __MODULE__)
+
+    {:noreply, %{state | parent_ref: nil}}
   end
 
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
