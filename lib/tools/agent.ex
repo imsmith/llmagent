@@ -100,8 +100,40 @@ defmodule LLMAgent.Tools.Agent do
     end
   end
 
-  defp spawn_with_mode("sync", _name, _prompt, _tools, _parent, _args) do
-    {:error, ErrorStruct.new("not_implemented", "mode", "sync mode not yet implemented")}
+  defp spawn_with_mode("sync", name, prompt, tools, parent, args) do
+    timeout = Map.get(args, "timeout", @default_sync_timeout)
+    name_atom = String.to_atom(name)
+
+    case start_child(name, prompt, tools, parent, args) do
+      {:ok, _pid} ->
+        LLMAgent.prompt({:global, name_atom}, prompt)
+
+        case LLMAgent.TupleSpace.in_(:default, {:agent_result, name_atom, :_}, timeout) do
+          {:ok, {:agent_result, ^name_atom, content}} ->
+            AgentSupervisor.stop_agent(name_atom)
+
+            {:ok,
+             %{output: content, metadata: %{action: "spawn", mode: "sync", name: name}}}
+
+          {:error, :timeout} ->
+            AgentSupervisor.stop_agent(name_atom)
+
+            {:error,
+             ErrorStruct.new("timeout", "timeout",
+               "agent :#{name} timed out after #{timeout}ms")}
+
+          {:error, reason} ->
+            AgentSupervisor.stop_agent(name_atom)
+
+            {:error,
+             ErrorStruct.new("spawn_failed", nil,
+               "sync wait failed: #{inspect(reason)}")}
+        end
+
+      {:error, reason} ->
+        {:error,
+         ErrorStruct.new("spawn_failed", "name", "could not start #{name}: #{inspect(reason)}")}
+    end
   end
 
   defp spawn_with_mode(other, _name, _prompt, _tools, _parent, _args) do

@@ -130,4 +130,39 @@ defmodule LLMAgent.Tools.AgentTest do
       assert {:error, %ErrorStruct{reason: "unknown_command"}} = AgentTool.perform("nope", %{})
     end
   end
+
+  describe "spawn (sync)" do
+    test "blocks until child writes result, returns content" do
+      Task.start(fn ->
+        Process.sleep(40)
+        TupleSpace.out({:agent_result, :child_sync_ok, "the answer"})
+        Process.sleep(20)
+        LLMAgent.AgentSupervisor.stop_agent(:child_sync_ok)
+      end)
+
+      args = %{
+        "name" => "child_sync_ok",
+        "prompt" => "noop",
+        "tools" => ["bash"],
+        "mode" => "sync",
+        "timeout" => 1_000
+      }
+
+      assert {:ok, %{output: "the answer"}} = AgentTool.perform("spawn", args)
+    end
+
+    test "times out and kills the child if no result arrives" do
+      args = %{
+        "name" => "child_sync_to",
+        "prompt" => "noop",
+        "tools" => ["bash"],
+        "mode" => "sync",
+        "timeout" => 100
+      }
+
+      assert {:error, %ErrorStruct{reason: "timeout"}} = AgentTool.perform("spawn", args)
+      Process.sleep(50)
+      assert GenServer.whereis({:global, :child_sync_to}) == nil
+    end
+  end
 end
