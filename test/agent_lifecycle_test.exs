@@ -452,4 +452,34 @@ defmodule LLMAgent.AgentLifecycleTest do
       assert Enum.at(state.history, 1) == %{role: "assistant", content: ""}
     end
   end
+
+  # --- Orchestration state ---
+
+  describe "orchestration state fields" do
+    test "default state has parent=nil and allowed_tools=:all" do
+      _pid = start_agent(:orch_default)
+      state = get_state(:orch_default)
+      assert state.parent == nil
+      assert state.allowed_tools == :all
+    end
+
+    test "parent and allowed_tools can be set via opts" do
+      _pid = start_agent(:orch_child, parent: :some_parent, allowed_tools: [:bash, :file])
+      state = get_state(:orch_child)
+      assert state.parent == :some_parent
+      assert state.allowed_tools == [:bash, :file]
+    end
+
+    test "parent value is exposed via state.parent (Contexts piping verified in Agent-tool tests)" do
+      pid = start_agent(:orch_ctx, parent: :p_a)
+      LLMAgent.prompt({:global, :orch_ctx}, "x")
+      # Wait for the GenServer to have processed the prompt and updated state
+      Process.sleep(20)
+      ctx = :sys.get_state(pid)
+      assert ctx.parent == :p_a
+      # Contexts is process-local; verifying that Contexts.put fires during do_prompt/2
+      # requires running a tool inside the agent's process — covered by the Agent tool
+      # unit tests in Task 8 (test/tools/agent_tool_test.exs).
+    end
+  end
 end

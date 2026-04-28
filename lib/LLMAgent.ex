@@ -30,6 +30,8 @@ defmodule LLMAgent do
     role = Keyword.get(opts, :role, :default)
     memory = Keyword.get(opts, :memory, LLMAgent.Memory.ETS)
     llm_client = Keyword.get(opts, :llm_client, LLMAgent.LLMClient.OpenAI)
+    parent = Keyword.get(opts, :parent, nil)
+    allowed_tools = Keyword.get(opts, :allowed_tools, :all)
 
     memory.init(name)
 
@@ -42,7 +44,9 @@ defmodule LLMAgent do
       api_host: Keyword.get(opts, :api_host, @default_api_host),
       llm_client: llm_client,
       memory: memory,
-      history: history
+      history: history,
+      parent: parent,
+      allowed_tools: allowed_tools
     }
 
     unless restored? do
@@ -147,6 +151,8 @@ defmodule LLMAgent do
     })
     Contexts.put(:role, state.role)
     Contexts.put(:model, state.model)
+    Contexts.put(:agent_name, state.name)
+    Contexts.put(:agent_parent, state.parent)
 
     Events.emit(:prompt, "agent.prompt", %{content: user_input, role: state.role}, __MODULE__)
 
