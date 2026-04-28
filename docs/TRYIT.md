@@ -194,3 +194,49 @@ LLMAgent.AgentSupervisor.stop_agent(:agent_two)
 # Remove DETS file
 rm data/llmagent_events.dets
 ```
+
+## Agent orchestration
+
+The `agent` tool spawns child agents under the existing `AgentSupervisor`, and
+the `tuple_space` tool gives them a coordination surface. Tuples from the LLM
+are JSON arrays; `"_"` is the wildcard. Children's tool access is whitelisted
+per spawn.
+
+Async spawn:
+
+```elixir
+LLMAgent.Tools.Agent.perform("spawn", %{
+  "name" => "worker",
+  "prompt" => "summarize the contents of /etc/hostname",
+  "tools" => ["file"],
+  "mode" => "async"
+})
+```
+
+Result lands in the default tuple space:
+
+```elixir
+LLMAgent.TupleSpace.in_(:default, {:agent_result, :worker, :_}, 30_000)
+```
+
+Sync spawn (blocks until the child finishes, then stops it):
+
+```elixir
+LLMAgent.Tools.Agent.perform("spawn", %{
+  "name" => "summarizer",
+  "prompt" => "say hello",
+  "tools" => ["bash"],
+  "mode" => "sync",
+  "timeout" => 30_000
+})
+```
+
+Through the tuple_space tool directly:
+
+```elixir
+LLMAgent.Tools.TupleSpace.perform("write",
+  %{"space" => "default", "tuple" => ["task", "worker", "do thing"]})
+
+LLMAgent.Tools.TupleSpace.perform("take",
+  %{"space" => "default", "pattern" => ["task", "_", "_"], "timeout" => 5_000})
+```
