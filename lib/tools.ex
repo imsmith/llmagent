@@ -15,7 +15,7 @@ defmodule LLMAgent.Tools do
       LLMAgent.Tools.Crypto
 
       iex> LLMAgent.Tools.all() |> Keyword.keys() |> Enum.sort()
-      [:bash, :crypto, :dbus, :file, :inotify, :net, :proc, :systemd, :udev, :web]
+      [:bash, :crypto, :dbus, :file, :inotify, :net, :proc, :systemd, :tuple_space, :udev, :web]
   """
 
   @registry_key :llmagent_tools_registry
@@ -30,7 +30,8 @@ defmodule LLMAgent.Tools do
     File,
     Net,
     Proc,
-    Crypto
+    Crypto,
+    TupleSpace
   }
 
   @builtins [
@@ -43,7 +44,8 @@ defmodule LLMAgent.Tools do
     file: File,
     net: Net,
     proc: Proc,
-    crypto: Crypto
+    crypto: Crypto,
+    tuple_space: TupleSpace
   ]
 
   @doc """
@@ -188,4 +190,8 @@ defmodule LLMAgent.Tools do
   @doc "Returns the Crypto tool module."
   @spec crypto() :: module()
   def crypto, do: get!(:crypto)
+
+  @doc "Returns the TupleSpace tool module."
+  @spec tuple_space() :: module()
+  def tuple_space, do: get!(:tuple_space)
 end
