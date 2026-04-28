@@ -549,4 +549,51 @@ defmodule LLMAgent.AgentLifecycleTest do
       assert Process.alive?(pid)
     end
   end
+
+  describe "child crash error tuple" do
+    setup do
+      LLMAgent.TupleSpace.stop_space(:default)
+      {:ok, _} = LLMAgent.TupleSpace.start_space(:default)
+      :ok
+    end
+
+    test "abnormal child exit writes {:agent_error, name, reason}" do
+      _pid = start_agent(:child_crash, parent: :some_parent)
+
+      # GenServer.stop/3 invokes terminate/2 with the given reason.
+      # Process.exit on a non-trapping GenServer would skip terminate/2 entirely.
+      # When GenServer.stop is called with a non-normal reason, it raises an exit.
+      # We need to trap that exit.
+      Process.flag(:trap_exit, true)
+      GenServer.stop({:global, :child_crash}, :killed_for_test)
+      Process.flag(:trap_exit, false)
+      Process.sleep(80)
+
+      assert {:ok, {:agent_error, :child_crash, _reason}} =
+               LLMAgent.TupleSpace.in_nowait({:agent_error, :child_crash, :_})
+    end
+
+    test "normal child completion does not write {:agent_error, ...}" do
+      pid = start_agent(:child_normal, parent: :some_parent)
+      simulate_llm_response(pid, "done")
+      Process.sleep(80)
+
+      assert {:ok, _} = LLMAgent.TupleSpace.in_nowait({:agent_result, :child_normal, :_})
+      assert {:error, :no_match} = LLMAgent.TupleSpace.in_nowait({:agent_error, :child_normal, :_})
+    end
+
+    test "root agent abnormal exit does not write {:agent_error, ...}" do
+      _pid = start_agent(:root_crash)
+
+      # When GenServer.stop is called with a non-normal reason, it raises an exit.
+      # We need to trap that exit.
+      Process.flag(:trap_exit, true)
+      GenServer.stop({:global, :root_crash}, :killed_for_test)
+      Process.flag(:trap_exit, false)
+      Process.sleep(80)
+
+      assert {:error, :no_match} =
+               LLMAgent.TupleSpace.in_nowait({:agent_error, :root_crash, :_})
+    end
+  end
 end

@@ -146,8 +146,17 @@ defmodule LLMAgent do
   end
 
   @impl true
-  def terminate(_reason, state) do
+  def terminate(reason, state) do
     state.memory.store(state.name, :history, state.history)
+
+    if state.parent != nil and reason not in [:normal, :shutdown] do
+      try do
+        LLMAgent.TupleSpace.out({:agent_error, state.name, inspect(reason)})
+      catch
+        _, _ -> :ok
+      end
+    end
+
     :ok
   end
 
