@@ -44,6 +44,11 @@ defmodule LLMAgent.Tools.Discovery do
   def renew(ad_id, %DateTime{} = expires_at),
     do: GenServer.call(__MODULE__, {:renew, ad_id, expires_at})
 
+  @doc "Subscribe to tool discovery events matching a query."
+  @spec subscribe(ToolQuery.t(), pid()) :: :ok
+  def subscribe(%ToolQuery{} = q, subscriber) when is_pid(subscriber),
+    do: GenServer.call(__MODULE__, {:subscribe, q, subscriber})
+
   @doc "Find the top-ranked tool ad matching the query."
   @spec find_one(ToolQuery.t()) :: {:ok, ToolAd.t()} | {:error, :not_found}
   def find_one(%ToolQuery{} = q) do
@@ -112,13 +117,19 @@ defmodule LLMAgent.Tools.Discovery do
         read_concurrency: true
       ])
 
-    {:ok, %{table: table}}
+    {:ok, %{table: table, subscribers: %{}}}
   end
 
   @impl true
   def handle_call(:reset, _from, state) do
     :ets.delete_all_objects(@table)
     {:reply, :ok, state}
+  end
+
+  def handle_call({:subscribe, query, pid}, _from, state) do
+    monitor_ref = Process.monitor(pid)
+    subs = Map.put(state.subscribers, monitor_ref, {pid, query})
+    {:reply, :ok, %{state | subscribers: subs}}
   end
 
   def handle_call({:register, ad}, _from, state) do
@@ -130,6 +141,7 @@ defmodule LLMAgent.Tools.Discovery do
         case validate(ad) do
           :ok ->
             :ets.insert(@table, {ad.id, ad})
+            notify_subscribers(state.subscribers, ad, :tool_added)
             {:reply, :ok, state}
 
           {:error, _} = err ->
@@ -142,6 +154,7 @@ defmodule LLMAgent.Tools.Discovery do
     case validate(ad) do
       :ok ->
         :ets.insert(@table, {ad.id, ad})
+        notify_subscribers(state.subscribers, ad, :tool_updated)
         {:reply, :ok, state}
 
       {:error, _} = err ->
@@ -150,7 +163,15 @@ defmodule LLMAgent.Tools.Discovery do
   end
 
   def handle_call({:unregister, ad_id}, _from, state) do
-    :ets.delete(@table, ad_id)
+    case :ets.lookup(@table, ad_id) do
+      [{^ad_id, ad}] ->
+        :ets.delete(@table, ad_id)
+        notify_subscribers_removed(state.subscribers, ad, :unregistered)
+
+      [] ->
+        :ok
+    end
+
     {:reply, :ok, state}
   end
 
@@ -163,6 +184,11 @@ defmodule LLMAgent.Tools.Discovery do
       [] ->
         {:reply, {:error, :not_found}, state}
     end
+  end
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
+    {:noreply, %{state | subscribers: Map.delete(state.subscribers, ref)}}
   end
 
   # --- Matching / ranking ---
@@ -188,4 +214,20 @@ defmodule LLMAgent.Tools.Discovery do
 
   defp apply_limit(list, :all), do: list
   defp apply_limit(list, n) when is_integer(n) and n > 0, do: Enum.take(list, n)
+
+  defp notify_subscribers(subs, %ToolAd{} = ad, event) do
+    for {_ref, {pid, query}} <- subs, matches?(ad, query) do
+      send(pid, {event, ad.id, ad.coordinate})
+    end
+
+    :ok
+  end
+
+  defp notify_subscribers_removed(subs, %ToolAd{} = ad, reason) do
+    for {_ref, {pid, query}} <- subs, matches?(ad, query) do
+      send(pid, {:tool_removed, ad.id, ad.coordinate, reason})
+    end
+
+    :ok
+  end
 end

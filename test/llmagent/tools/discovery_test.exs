@@ -171,4 +171,67 @@ defmodule LLMAgent.Tools.DiscoveryTest do
       assert {:error, :not_found} = Discovery.renew("nope", future)
     end
   end
+
+  describe "subscribe/2" do
+    test "subscriber receives :tool_added matching the query" do
+      query = ToolQuery.new(%{coordinate: "function.notify.*"})
+      :ok = Discovery.subscribe(query, self())
+
+      a = ad(%{id: "n1", coordinate: "function.notify.one"})
+      :ok = Discovery.register(a)
+
+      assert_receive {:tool_added, "n1", "function.notify.one"}, 500
+    end
+
+    test "subscriber does NOT receive non-matching events" do
+      query = ToolQuery.new(%{coordinate: "function.subscribe-me.*"})
+      :ok = Discovery.subscribe(query, self())
+
+      :ok = Discovery.register(ad(%{id: "off", coordinate: "function.other.x"}))
+
+      refute_receive {:tool_added, "off", _}, 200
+    end
+
+    test "subscriber receives :tool_updated and :tool_removed" do
+      query = ToolQuery.new(%{coordinate: "function.lifecycle.*"})
+      :ok = Discovery.subscribe(query, self())
+
+      a = ad(%{id: "lc", coordinate: "function.lifecycle.x"})
+      :ok = Discovery.register(a)
+      assert_receive {:tool_added, "lc", _}, 500
+
+      :ok = Discovery.update(%{a | meta: %{v: 2}})
+      assert_receive {:tool_updated, "lc", _}, 500
+
+      :ok = Discovery.unregister("lc")
+      assert_receive {:tool_removed, "lc", _, :unregistered}, 500
+    end
+
+    test "subscription is cleaned up when subscriber dies" do
+      parent = self()
+      query = ToolQuery.new(%{coordinate: "function.dead.*"})
+
+      child =
+        spawn(fn ->
+          :ok = Discovery.subscribe(query, self())
+          send(parent, :subscribed)
+
+          receive do
+            :stop -> :ok
+          after
+            5_000 -> :ok
+          end
+        end)
+
+      assert_receive :subscribed, 500
+      ref = Process.monitor(child)
+      send(child, :stop)
+      assert_receive {:DOWN, ^ref, :process, ^child, _}, 500
+
+      # After the subscriber is gone, registering a matching ad should not crash Discovery.
+      :ok = Discovery.register(ad(%{id: "after-death", coordinate: "function.dead.x"}))
+
+      assert {:ok, _} = Discovery.find_one(ToolQuery.new(%{coordinate: "function.dead.x"}))
+    end
+  end
 end
