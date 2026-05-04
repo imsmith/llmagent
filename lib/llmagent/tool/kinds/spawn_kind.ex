@@ -38,23 +38,42 @@ defmodule LLMAgent.Tool.Kinds.SpawnKind do
   ```
   """
 
-  @typedoc "Opaque reference returned by `spawn_child/2` and passed to status/terminate callbacks."
-  @type child_ref :: pid() | reference() | binary()
+  @typedoc """
+  Opaque reference to a spawned child. Shape is implementation-defined —
+  could be a pid, a reference, a string ID, or any other term. The caller
+  must treat it opaquely.
+  """
+  @type child_ref :: term()
 
-  @typedoc "Implementation-defined child specification passed to `spawn_child/2`."
-  @type child_spec :: map() | keyword() | binary()
+  @typedoc """
+  Specification passed to `spawn_child/2`. Shape is implementation-defined.
+  """
+  @type child_spec :: term()
 
-  @typedoc "Status value returned by `child_status/1`. Shape is implementation-defined."
-  @type child_status :: :running | :stopped | :error | atom()
+  @typedoc """
+  Status returned by `child_status/1`. Shape is implementation-defined.
+  """
+  @type child_status :: term()
 
-  @doc "Spawn a child process from a spec. Returns `{:ok, child_ref}` or `{:error, reason}` on failure."
+  @typedoc """
+  Reason passed to `terminate_child/2`. Any term — atom, tuple, struct.
+  """
+  @type terminate_reason :: term()
+
+  @typedoc """
+  Error reason returned by callbacks. May be an atom, a struct (e.g.
+  `Comn.Errors.ErrorStruct`), a tagged tuple, or any other term.
+  """
+  @type error_reason :: term()
+
+  @doc "Spawn a child process. Returns `{:ok, child_ref}` or `{:error, reason}` on failure."
   @callback spawn_child(spec :: child_spec(), opts :: keyword()) ::
-              {:ok, child_ref()} | {:error, atom()}
+              {:ok, child_ref()} | {:error, error_reason()}
 
-  @doc "Query the status of a child process. Returns an implementation-defined status value."
+  @doc "Query the status of a child process."
   @callback child_status(child_ref :: child_ref()) :: child_status()
 
   @doc "Terminate a child process with the given reason. Returns `:ok` or `{:error, reason}` on failure."
-  @callback terminate_child(child_ref :: child_ref(), reason :: atom()) ::
-              :ok | {:error, atom()}
+  @callback terminate_child(child_ref :: child_ref(), reason :: terminate_reason()) ::
+              :ok | {:error, error_reason()}
 end

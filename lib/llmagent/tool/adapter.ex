@@ -32,38 +32,47 @@ defmodule LLMAgent.Tool.Adapter do
   use `binding: {:fun, &my_fn/2}` in any `ToolAd` pointing at it.
   """
 
-  @typedoc "Opaque binding payload — the second element of a `ToolAd.binding` tuple. Shape is adapter-specific."
-  @type payload :: module() | pid() | reference() | binary() | map()
+  @typedoc "Opaque binding payload — second element of `ToolAd.binding` tuple. Adapter-specific."
+  @type payload :: term()
 
-  @typedoc "Opaque child reference returned by `spawn_child/3`. Shape is adapter-specific."
-  @type child_ref :: pid() | reference() | binary()
+  @typedoc "Opaque child reference returned by `spawn_child/3`. Adapter-specific."
+  @type child_ref :: term()
 
-  @typedoc "Opaque child spec passed to `spawn_child/3`. Shape is adapter-specific."
-  @type child_spec :: map() | keyword() | binary()
+  @typedoc "Spec passed to `spawn_child/3`. Adapter-specific."
+  @type child_spec :: term()
 
-  @typedoc "Termination reason passed to `terminate_child/4`."
-  @type reason :: atom() | {:shutdown, atom()}
+  @typedoc "Termination reason for `terminate_child/4`. Any term."
+  @type terminate_reason :: term()
 
-  @typedoc "Value returned from a successful query or compute call."
-  @type value :: map() | list() | binary() | number() | boolean() | nil
+  @typedoc "Value returned from successful query/compute. Implementation-defined."
+  @type value :: term()
 
-  @typedoc "Acknowledgement token returned from a successful action call."
-  @type ack :: map() | binary() | atom()
+  @typedoc "Acknowledgement from successful action. Implementation-defined."
+  @type ack :: term()
+
+  @typedoc "Metadata accompanying a successful result. Implementation-defined keys."
+  @type meta :: map()
+
+  @typedoc "Error reason. May be atom, struct (e.g. Comn.Errors.ErrorStruct), tuple, or any term."
+  @type error_reason :: term()
+
+  @typedoc "Status returned from `child_status/3`. Implementation-defined."
+  @type child_status :: term()
 
   @doc "Execute a read-only query. Pure, idempotent, no side effects."
   @callback query(payload(), action :: String.t(), args :: map(),
                   opts :: keyword()) ::
-              {:ok, value(), map()} | {:error, atom()}
+              {:ok, value(), meta()} | {:error, error_reason()}
 
   @doc "Execute an action with side effects. Accepts optional idempotency_key to prevent duplicate effects."
   @callback act(payload(), action :: String.t(), args :: map(),
                 idempotency_key :: String.t() | nil, opts :: keyword()) ::
-              {:ok, ack(), map()} | {:error, atom()}
+              {:ok, ack(), meta()} | {:error, error_reason()}
 
   @doc "Subscribe to stream updates."
   @callback subscribe(payload(), action :: String.t(), args :: map(),
                       subscriber :: pid(), opts :: keyword()) ::
-              {:ok, reference()} | {:error, atom()}
+              {:ok, reference()} | {:error, error_reason()}
 
   @doc "Unsubscribe from stream updates."
   @callback unsubscribe(payload(), sub_ref :: reference(),
@@ -72,12 +81,12 @@ defmodule LLMAgent.Tool.Adapter do
   @doc "Compute a pure value — no I/O, no side effects."
   @callback compute(payload(), action :: String.t(), args :: map(),
                     opts :: keyword()) ::
-              {:ok, value()} | {:error, atom()}
+              {:ok, value()} | {:error, error_reason()}
 
   @doc "Participate in a coordination session."
   @callback participate(payload(), role :: atom(), args :: map(),
                         opts :: keyword()) ::
-              {:ok, reference()} | {:error, atom()}
+              {:ok, reference()} | {:error, error_reason()}
 
   @doc "Leave a coordination session."
   @callback leave(payload(), participation_ref :: reference(),
@@ -86,16 +95,16 @@ defmodule LLMAgent.Tool.Adapter do
   @doc "Spawn a child process."
   @callback spawn_child(payload(), spec :: child_spec(),
                         opts :: keyword()) ::
-              {:ok, child_ref()} | {:error, atom()}
+              {:ok, child_ref()} | {:error, error_reason()}
 
   @doc "Query the status of a child process."
   @callback child_status(payload(), child_ref :: child_ref(),
-                         opts :: keyword()) :: atom() | map()
+                         opts :: keyword()) :: child_status()
 
   @doc "Terminate a child process with the given reason."
   @callback terminate_child(payload(), child_ref :: child_ref(),
-                            reason(), opts :: keyword()) ::
-              :ok | {:error, atom()}
+                            reason :: terminate_reason(), opts :: keyword()) ::
+              :ok | {:error, error_reason()}
 
   @optional_callbacks query: 4, act: 5, subscribe: 5, unsubscribe: 3, compute: 4,
                       participate: 4, leave: 3, spawn_child: 3, child_status: 3,

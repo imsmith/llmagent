@@ -24,7 +24,13 @@ defmodule LLMAgent.Tool.Kinds.Compute do
   ```
   """
 
+  @typedoc "Computed value. Implementation-defined shape (no I/O constraint)."
+  @type value :: term()
+
+  @typedoc "Error reason. Any term."
+  @type error_reason :: term()
+
   @doc "Execute a pure computation over args. No I/O, no side effects. Returns `{:ok, value}` on success or `{:error, reason}` on failure."
   @callback compute(action :: String.t(), args :: map()) ::
-              {:ok, value :: term()} | {:error, atom()}
+              {:ok, value()} | {:error, error_reason()}
 end

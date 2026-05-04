@@ -22,14 +22,23 @@ defmodule LLMAgent.Tool.Kinds.Action do
   ```
   """
 
+  @typedoc "Acknowledgement returned from an action. Implementation-defined."
+  @type ack :: term()
+
+  @typedoc "Metadata accompanying an action result."
+  @type meta :: map()
+
+  @typedoc "Error reason. Any term — atom, struct, tagged tuple."
+  @type error_reason :: term()
+
   @typedoc """
   Return value of a successful action: `{:ok, ack, meta}` where `ack` is an
   acknowledgement token (receipt ID, `:ok`, etc.) and `meta` is an open map.
   On failure: `{:error, reason}`.
   """
-  @type result :: {:ok, ack :: term(), meta :: map()} | {:error, term()}
+  @type result :: {:ok, ack(), meta()} | {:error, error_reason()}
 
   @doc "Execute an action with side effects. Accepts optional idempotency_key to prevent duplicate effects. Returns `{:ok, ack, meta}` on success or `{:error, reason}` on failure."
   @callback act(action :: String.t(), args :: map(), idempotency_key :: String.t() | nil) ::
-              {:ok, ack :: term(), meta :: map()} | {:error, atom()}
+              result()
 end

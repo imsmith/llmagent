@@ -33,9 +33,12 @@ defmodule LLMAgent.Tool.Kinds.Coordinate do
   ```
   """
 
+  @typedoc "Error reason. Any term."
+  @type error_reason :: term()
+
   @doc "Participate in a coordinated interaction with a given role. Returns `{:ok, participation_ref}` or `{:error, reason}` on failure."
   @callback participate(role :: atom(), args :: map(), opts :: keyword()) ::
-              {:ok, participation_ref :: reference()} | {:error, atom()}
+              {:ok, participation_ref :: reference()} | {:error, error_reason()}
 
   @doc "Leave a coordination context using the participation reference. Returns `:ok`."
   @callback leave(participation_ref :: reference()) :: :ok

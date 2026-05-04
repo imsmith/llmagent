@@ -21,14 +21,23 @@ defmodule LLMAgent.Tool.Kinds.Query do
   ```
   """
 
+  @typedoc "Value returned from a query. Implementation-defined shape."
+  @type value :: term()
+
+  @typedoc "Metadata accompanying a query result. Implementation-defined keys."
+  @type meta :: map()
+
+  @typedoc "Error reason. May be atom, struct (e.g. Comn.Errors.ErrorStruct), tuple, or any term."
+  @type error_reason :: term()
+
   @typedoc """
   Return value of a successful query: `{:ok, value, meta}` where `meta` is an
   open map for provenance, timing, or pagination context. On failure:
   `{:error, reason}`.
   """
-  @type result :: {:ok, value :: term(), meta :: map()} | {:error, term()}
+  @type result :: {:ok, value(), meta()} | {:error, error_reason()}
 
   @doc "Execute a read-only query. Pure, idempotent, no side effects. Returns `{:ok, value, meta}` on success or `{:error, reason}` on failure."
   @callback query(action :: String.t(), args :: map()) ::
-              {:ok, value :: term(), meta :: map()} | {:error, atom()}
+              result()
 end
