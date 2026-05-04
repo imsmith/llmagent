@@ -1,12 +1,42 @@
 defmodule LLMAgent.Tools.Discovery do
   @moduledoc """
-  Tool discovery registry. Stores `LLMAgent.ToolAd` records and serves
-  pattern-matching queries. See spec §2 and §5.
+  Tool discovery registry. The authoritative store for `LLMAgent.ToolAd`
+  records at runtime.
 
-  This module is built up across plan tasks 9–14. Task 9 adds register / update
-  / unregister / renew / find_one / find_all with ranking.
+  Runs as a named `GenServer`. Stores ads in a protected ETS table keyed by
+  `ad_id`. Serves pattern-matching queries, notifies subscribers on changes,
+  and periodically sweeps expired leases. Also consumes announcements from the
+  `:tool_announce` tuple space, allowing any process to advertise tools without
+  a direct call.
 
-  Storage: ETS table owned by this GenServer, keyed by ad_id.
+  See `docs/superpowers/specs/2026-05-03-tool-discovery-design.md` §2 and §5.
+
+  > Exhaustive behaviour examples are in
+  > `test/llmagent/tools/discovery_test.exs`. Doctests are not used here
+  > because all mutating functions depend on live GenServer state.
+
+  ## Example
+
+  ```elixir
+  ad = LLMAgent.ToolAd.new(%{
+    id: "my.tool.1",
+    coordinate: "function.my.tool",
+    kinds: [:compute],
+    binding: {:module, MyTool},
+    operational: %{actions: %{}},
+    constraint: %{idempotency: %{}, blast_radius: %{}},
+    affordance: %{declared: [], learned: [], open: false},
+    fidelity: :authoritative,
+    provenance: %{source: "my_app", produced_at: DateTime.utc_now(),
+                  based_on: [], signature: nil},
+    lease: :permanent
+  })
+
+  :ok = LLMAgent.Tools.Discovery.register(ad)
+  {:ok, ^ad} = LLMAgent.Tools.Discovery.find_one(
+    LLMAgent.ToolQuery.new(%{coordinate: "function.my.tool"})
+  )
+  ```
   """
 
   use GenServer
@@ -19,6 +49,8 @@ defmodule LLMAgent.Tools.Discovery do
 
   # --- Public API ---
 
+  @doc "Start the discovery registry GenServer, registered under `#{__MODULE__}`."
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -54,7 +86,16 @@ defmodule LLMAgent.Tools.Discovery do
   @spec sweep_now() :: :ok
   def sweep_now, do: GenServer.call(__MODULE__, :sweep_now)
 
-  @doc "Find the top-ranked tool ad matching the query."
+  @doc """
+  Find the top-ranked tool ad matching the query.
+
+  Delegates to `find_all/1` and returns the first result, or
+  `{:error, :not_found}` if nothing matches. Reads directly from ETS —
+  no GenServer roundtrip.
+
+  No doctest: result depends on live registry state. See
+  `test/llmagent/tools/discovery_test.exs`.
+  """
   @spec find_one(ToolQuery.t()) :: {:ok, ToolAd.t()} | {:error, :not_found}
   def find_one(%ToolQuery{} = q) do
     case find_all(q) do
@@ -63,7 +104,16 @@ defmodule LLMAgent.Tools.Discovery do
     end
   end
 
-  @doc "Find all tool ads matching the query, ranked by fidelity/confidence/recency."
+  @doc """
+  Find all tool ads matching the query, ranked by fidelity (highest first),
+  then confidence (highest first), then recency (most recent first).
+
+  Applies `ToolQuery.limit` if set. Reads directly from ETS — no GenServer
+  roundtrip.
+
+  No doctest: result depends on live registry state. See
+  `test/llmagent/tools/discovery_test.exs`.
+  """
   @spec find_all(ToolQuery.t()) :: {:ok, [ToolAd.t()]}
   def find_all(%ToolQuery{} = q) do
     ads =
@@ -78,7 +128,15 @@ defmodule LLMAgent.Tools.Discovery do
 
   # --- Validation (used by register/update; will also be used by §5.2 announcement consumer) ---
 
-  @doc "Validate a tool ad structure. Returns :ok or {:error, {:invalid_ad, field, reason}}."
+  @doc """
+  Validate a tool ad structure.
+
+  Checks coordinate format, kinds list, fidelity, lease, and provenance.
+  Called automatically by `register/1` and `update/1`; also callable
+  directly for pre-flight validation.
+
+  Returns `:ok` or `{:error, {:invalid_ad, field, reason}}`.
+  """
   @spec validate(ToolAd.t()) :: :ok | {:error, {:invalid_ad, atom(), String.t()}}
   def validate(%ToolAd{} = ad) do
     cond do
