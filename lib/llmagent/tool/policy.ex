@@ -1,6 +1,31 @@
 defmodule LLMAgent.Tool.Policy do
   @moduledoc """
-  Per-agent policy that gates the dispatcher. See spec §6.
+  Per-agent policy that gates the dispatcher.
+
+  Every dispatcher call passes through `decide/4` before the adapter is
+  invoked. A `%Policy{}` carries an allow list, a deny list, a minimum
+  fidelity requirement, and an optional provenance constraint. The default
+  empty struct denies everything — callers must explicitly allow coordinates.
+
+  Policies compose with `intersect/2`, which produces a result at least as
+  restrictive as either input (fail-closed). The `from_legacy_or_struct/1`
+  helper translates the old `[:atom, ...]` allowed_tools format used by
+  pre-discovery code.
+
+  See `docs/superpowers/specs/2026-05-03-tool-discovery-design.md` §6.
+
+  ## Usage example
+
+      alias LLMAgent.Tool.{Policy, Dispatcher}
+
+      policy = %Policy{
+        allow: [%{coordinate: "function.*", kinds: [:compute], actions: :any}],
+        fidelity_min: :authoritative
+      }
+
+      # Pass policy as an opt to any Dispatcher call:
+      Dispatcher.compute("function.crypto.sha256", "sha256", %{"data" => "x"},
+                         policy: policy)
   """
 
   alias LLMAgent.{ToolAd, ToolQuery}
@@ -11,8 +36,24 @@ defmodule LLMAgent.Tool.Policy do
             fidelity_min: :trained,
             provenance: nil
 
+  @typedoc """
+  A policy rule. May be a bare coordinate pattern string (equivalent to
+  `%{coordinate: pattern, kinds: :any, actions: :any}`) or a map with
+  optional `:kinds` and `:actions` narrowing.
+  """
   @type policy_rule :: %{coordinate: String.t(), kinds: :any | [atom()], actions: :any | [String.t()]}
 
+  @typedoc """
+  Per-agent dispatch policy.
+
+  - `allow` — list of `policy_rule` or bare coordinate strings. Empty list
+    denies all (fail-closed default).
+  - `deny` — list of `policy_rule` or coordinate strings; checked first,
+    takes priority over allow.
+  - `fidelity_min` — minimum ad fidelity required to call the tool.
+  - `provenance` — optional map with `:source` (list or `:any`) and
+    `:signed` (boolean); `nil` means no provenance filtering.
+  """
   @type t :: %__MODULE__{
           allow: [String.t() | policy_rule()],
           deny: [String.t() | policy_rule()],
@@ -23,9 +64,48 @@ defmodule LLMAgent.Tool.Policy do
   @fidelity_order %{speculative: 0, trained: 1, authoritative: 2}
 
   @doc """
-  Decide whether a policy permits invoking (ad, kind, action).
+  Decide whether a policy permits invoking `(ad, kind, action)`.
 
-  Returns `:ok` or `{:error, :forbidden, reason}`.
+  Evaluation order:
+
+  1. If any deny rule matches → `{:error, :forbidden, :explicit_deny}`
+  2. If no allow rule matches → `{:error, :forbidden, :not_allowed}`
+  3. If ad fidelity is below `fidelity_min` → `{:error, :forbidden, :fidelity_too_low}`
+  4. If provenance source does not match → `{:error, :forbidden, :provenance}`
+  5. If policy requires signed and ad is unsigned → `{:error, :forbidden, :unsigned}`
+  6. Otherwise → `:ok`
+
+  ## Examples
+
+  Allow by coordinate wildcard:
+
+      iex> alias LLMAgent.{ToolAd, Tool.Policy}
+      iex> ad = ToolAd.new(%{
+      ...>   id: "ex", coordinate: "function.crypto.sha256", kinds: [:compute],
+      ...>   binding: {:module, Mod}, operational: %{actions: %{}},
+      ...>   constraint: %{idempotency: %{}, blast_radius: %{}},
+      ...>   affordance: %{declared: [], learned: [], open: false},
+      ...>   fidelity: :authoritative,
+      ...>   provenance: %{source: "test", produced_at: ~U[2026-05-03 00:00:00Z], based_on: [], signature: nil},
+      ...>   lease: :permanent
+      ...> })
+      iex> Policy.decide(%Policy{allow: ["function.*"]}, ad, :compute, "sha256")
+      :ok
+
+  Deny by default (empty allow list):
+
+      iex> alias LLMAgent.{ToolAd, Tool.Policy}
+      iex> ad = ToolAd.new(%{
+      ...>   id: "ex", coordinate: "function.crypto.sha256", kinds: [:compute],
+      ...>   binding: {:module, Mod}, operational: %{actions: %{}},
+      ...>   constraint: %{idempotency: %{}, blast_radius: %{}},
+      ...>   affordance: %{declared: [], learned: [], open: false},
+      ...>   fidelity: :authoritative,
+      ...>   provenance: %{source: "test", produced_at: ~U[2026-05-03 00:00:00Z], based_on: [], signature: nil},
+      ...>   lease: :permanent
+      ...> })
+      iex> Policy.decide(%Policy{}, ad, :compute, "sha256")
+      {:error, :forbidden, :not_allowed}
   """
   @spec decide(t(), ToolAd.t(), atom(), String.t()) ::
           :ok | {:error, :forbidden, atom()}
@@ -51,7 +131,25 @@ defmodule LLMAgent.Tool.Policy do
     end
   end
 
-  @doc "Intersect (narrow) two policies. The result is at least as restrictive as either input."
+  @doc """
+  Intersect (narrow) two policies. The result is at least as restrictive as
+  either input.
+
+  - `allow` list: whichever of `base.allow` or `override.allow` is shorter
+    (narrower by cardinality; full coordinate-level intersection is deferred).
+  - `deny` list: concatenation of both deny lists.
+  - `fidelity_min`: stricter (higher) of the two.
+  - `provenance`: stricter of the two.
+
+  ## Examples
+
+      iex> alias LLMAgent.Tool.Policy
+      iex> base = %Policy{allow: ["function.*"], fidelity_min: :trained}
+      iex> override = %Policy{allow: ["function.specific"], fidelity_min: :authoritative}
+      iex> merged = Policy.intersect(base, override)
+      iex> {merged.fidelity_min, hd(merged.allow)}
+      {:authoritative, "function.*"}
+  """
   @spec intersect(t(), t()) :: t()
   def intersect(%__MODULE__{} = base, %__MODULE__{} = override) do
     %__MODULE__{
@@ -62,7 +160,21 @@ defmodule LLMAgent.Tool.Policy do
     }
   end
 
-  @doc "Translate the legacy `[:atom, ...]` allowed_tools or pass through a %Policy{}."
+  @doc """
+  Translate the legacy `[:atom, ...]` allowed_tools format, or pass through a
+  `%Policy{}` unchanged.
+
+  Legacy atom lists map each atom to a `legacy.<atom>` coordinate rule with
+  `:any` kinds and actions, fidelity `:authoritative`, and permissive
+  provenance.
+
+  ## Examples
+
+      iex> alias LLMAgent.Tool.Policy
+      iex> p = Policy.from_legacy_or_struct([:bash, :web])
+      iex> Enum.map(p.allow, & &1.coordinate)
+      ["legacy.bash", "legacy.web"]
+  """
   @spec from_legacy_or_struct([atom()] | t()) :: t()
   def from_legacy_or_struct(%__MODULE__{} = p), do: p
 
