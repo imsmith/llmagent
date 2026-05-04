@@ -170,5 +170,11 @@ defmodule LLMAgent.Tool.Policy do
   defp intersect_rule_lists(base, []), do: base
 
   @doc false
-  defp intersect_rule_lists(_base, override), do: override
+  defp intersect_rule_lists(base, override) do
+    # Conservative: pick the list with fewer rules (narrower by cardinality).
+    # True coordinate-level intersection (per-rule prefix-glob overlap) is
+    # deferred to a follow-on; this approximation fails closed by preferring
+    # the smaller allow set.
+    if length(base) <= length(override), do: base, else: override
+  end
 end

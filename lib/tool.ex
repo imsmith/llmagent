@@ -28,6 +28,7 @@ defmodule LLMAgent.Tool do
   Legacy callback; deprecated in favor of `ad/0`. Tools should eventually migrate
   to the full advertisement structure.
   """
+  @deprecated "Use ad/0 with kind behaviours instead. See migration plan."
   @callback describe() :: String.t()
 
   @doc """
@@ -38,6 +39,7 @@ defmodule LLMAgent.Tool do
 
   Legacy callback; deprecated in favor of the kind-based action system.
   """
+  @deprecated "Use the appropriate kind behaviour callback instead. See migration plan."
   @callback perform(action :: String.t(), args :: map()) :: tool_result()
 
   @optional_callbacks ad: 0, describe: 0, perform: 2

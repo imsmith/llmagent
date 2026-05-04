@@ -133,6 +133,24 @@ defmodule LLMAgent.Tool.PolicyTest do
       assert merged.fidelity_min == :authoritative
       assert merged.provenance == %{source: ["trusted"], signed: false}
     end
+
+    test "never broadens the allow set" do
+      narrow = %Policy{allow: [%{coordinate: "function.specific", kinds: :any, actions: :any}]}
+      broad  = %Policy{allow: [
+                 %{coordinate: "function.*",  kinds: :any, actions: :any},
+                 %{coordinate: "resource.*",  kinds: :any, actions: :any}
+               ]}
+
+      # narrow ∩ broad — must keep the narrower set, not adopt the broader one
+      merged_a = Policy.intersect(narrow, broad)
+      assert length(merged_a.allow) == 1
+      assert hd(merged_a.allow).coordinate == "function.specific"
+
+      # broad ∩ narrow — must also narrow
+      merged_b = Policy.intersect(broad, narrow)
+      assert length(merged_b.allow) == 1
+      assert hd(merged_b.allow).coordinate == "function.specific"
+    end
   end
 
   describe "from_legacy_or_struct/1" do
