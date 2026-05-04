@@ -269,4 +269,41 @@ defmodule LLMAgent.Tools.DiscoveryTest do
                Discovery.find_one(ToolQuery.new(%{coordinate: "function.fut"}))
     end
   end
+
+  describe "tuple space announcement consumer" do
+    setup do
+      # The announcement space is a normal LLMAgent.TupleSpace; ensure it's started.
+      case LLMAgent.TupleSpace.list_spaces() |> Enum.member?(:tool_announce) do
+        true -> :ok
+        false -> {:ok, _} = LLMAgent.TupleSpace.start_space(:tool_announce)
+      end
+
+      :ok
+    end
+
+    test "absorbs an announcement tuple into the registry" do
+      a = ad(%{id: "anno1", coordinate: "function.announced"})
+
+      :ok = Discovery.subscribe(ToolQuery.new(%{coordinate: "function.announced"}), self())
+
+      :ok = LLMAgent.TupleSpace.out(:tool_announce, {:tool_announce, "anno1", a})
+
+      assert_receive {:tool_added, "anno1", "function.announced"}, 1_000
+
+      assert {:ok, %{id: "anno1"}} =
+               Discovery.find_one(ToolQuery.new(%{coordinate: "function.announced"}))
+    end
+
+    test "withdraw tuple unregisters the ad" do
+      a = ad(%{id: "anno2", coordinate: "function.announced2"})
+      :ok = LLMAgent.TupleSpace.out(:tool_announce, {:tool_announce, "anno2", a})
+
+      Process.sleep(50)
+
+      :ok = Discovery.subscribe(ToolQuery.new(%{coordinate: "function.announced2"}), self())
+      :ok = LLMAgent.TupleSpace.out(:tool_announce, {:tool_withdraw, "anno2"})
+
+      assert_receive {:tool_removed, "anno2", "function.announced2", :unregistered}, 1_000
+    end
+  end
 end

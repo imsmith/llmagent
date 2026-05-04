@@ -15,6 +15,7 @@ defmodule LLMAgent.Tools.Discovery do
 
   @table :llmagent_tool_discovery
   @fidelity_order %{authoritative: 2, trained: 1, speculative: 0}
+  @announce_space :tool_announce
 
   # --- Public API ---
 
@@ -124,7 +125,16 @@ defmodule LLMAgent.Tools.Discovery do
     interval = Keyword.get(opts, :sweep_interval_ms, 30_000)
     schedule_sweep(interval)
 
-    {:ok, %{table: table, subscribers: %{}, sweep_interval_ms: interval}}
+    consume_announcements? = Keyword.get(opts, :consume_announcements, true)
+    if consume_announcements?, do: schedule_announce_poll()
+
+    {:ok,
+     %{
+       table: table,
+       subscribers: %{},
+       sweep_interval_ms: interval,
+       consume_announcements: consume_announcements?
+     }}
   end
 
   @impl true
@@ -209,6 +219,15 @@ defmodule LLMAgent.Tools.Discovery do
     {:noreply, state}
   end
 
+  def handle_info(:poll_announcements, state) do
+    drain_announcements(state)
+
+    if state.consume_announcements,
+      do: schedule_announce_poll()
+
+    {:noreply, state}
+  end
+
   # --- Matching / ranking ---
 
   defp matches?(%ToolAd{} = ad, %ToolQuery{} = q) do
@@ -269,6 +288,98 @@ defmodule LLMAgent.Tools.Discovery do
 
     :ok
   end
+
+  # --- Announcement Consumer ---
+
+  defp drain_announcements(state) do
+    case ensure_announce_space() do
+      :ok ->
+        drain_loop(state)
+
+      {:error, _} ->
+        :ok
+    end
+  end
+
+  defp drain_loop(state) do
+    case LLMAgent.TupleSpace.in_nowait(@announce_space, {:tool_announce, :_, :_}) do
+      {:ok, {:tool_announce, _id, %ToolAd{} = ad}} ->
+        absorb_announcement(state, ad)
+        drain_loop(state)
+
+      {:ok, _other} ->
+        # Malformed; drop
+        drain_loop(state)
+
+      {:error, :no_match} ->
+        drain_withdrawals(state)
+
+      {:error, _} ->
+        :ok
+    end
+  end
+
+  defp drain_withdrawals(state) do
+    case LLMAgent.TupleSpace.in_nowait(@announce_space, {:tool_withdraw, :_}) do
+      {:ok, {:tool_withdraw, ad_id}} when is_binary(ad_id) ->
+        case :ets.lookup(@table, ad_id) do
+          [{^ad_id, ad}] ->
+            :ets.delete(@table, ad_id)
+            notify_subscribers_removed(state.subscribers, ad, :unregistered)
+
+          [] ->
+            :ok
+        end
+
+        drain_withdrawals(state)
+
+      {:ok, _other} ->
+        drain_withdrawals(state)
+
+      {:error, :no_match} ->
+        :ok
+
+      {:error, _} ->
+        :ok
+    end
+  end
+
+  defp absorb_announcement(state, %ToolAd{} = ad) do
+    case validate(ad) do
+      :ok ->
+        existed? = :ets.member(@table, ad.id)
+        :ets.insert(@table, {ad.id, ad})
+
+        event = if existed?, do: :tool_updated, else: :tool_added
+        notify_subscribers(state.subscribers, ad, event)
+
+      {:error, _} ->
+        :ok
+    end
+  end
+
+  defp ensure_announce_space do
+    case LLMAgent.TupleSpace.list_spaces() do
+      spaces when is_list(spaces) ->
+        if @announce_space in spaces, do: :ok, else: ensure_started()
+
+      _ ->
+        {:error, :tuple_space_unavailable}
+    end
+  rescue
+    RuntimeError -> {:error, :tuple_space_unavailable}
+  end
+
+  defp ensure_started do
+    case LLMAgent.TupleSpace.start_space(@announce_space) do
+      {:ok, _} -> :ok
+      {:error, {:already_started, _}} -> :ok
+      other -> other
+    end
+  end
+
+  defp schedule_announce_poll,
+    do: Process.send_after(self(), :poll_announcements, 100)
 
   defp schedule_sweep(interval) when is_integer(interval) and interval > 0,
     do: Process.send_after(self(), :sweep, interval)
