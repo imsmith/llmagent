@@ -25,6 +25,10 @@ defmodule LLMAgent.DoctestTest do
   doctest LLMAgent.Tools
   doctest LLMAgent.Utils
 
+  # Discovery substrate
+  doctest LLMAgent.ToolAd
+  doctest LLMAgent.ToolQuery
+
   # Tools
   doctest LLMAgent.Tools.Bash
   doctest LLMAgent.Tools.Crypto
