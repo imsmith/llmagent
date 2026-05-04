@@ -2,10 +2,25 @@ defmodule LLMAgent.Tool.Bindings do
   @moduledoc """
   Registry mapping binding-kind atoms to their adapter modules.
 
-  Same `:persistent_term` shape as `LLMAgent.Tool.Kinds`. See spec §4.4.
+  Same `:persistent_term` shape as `LLMAgent.Tool.Kinds`. Seeded at application
+  boot with the canonical `:module` adapter. Additional adapters (`:process`,
+  `:remote`, `:http`, `:mcp`) are added in follow-on plans.
 
-  This plan only ships the `:module` adapter; `:process`, `:remote`, `:http`,
-  and `:mcp` are added in follow-on plans.
+  The binding kind is the first element of a `ToolAd.binding` tuple. When the
+  dispatcher resolves an ad, it calls `adapter_for/1` to get the adapter module
+  and then delegates the kind call to it with the binding payload as first arg.
+
+  See `docs/superpowers/specs/2026-05-03-tool-discovery-design.md` §4.4.
+
+  ## Registering a new binding adapter
+
+  Write a module implementing `@behaviour LLMAgent.Tool.Adapter`, then register
+  it at boot:
+
+  ```elixir
+  :ok = LLMAgent.Tool.Bindings.register(:http, MyApp.Tool.Adapter.HTTP)
+  {:ok, MyApp.Tool.Adapter.HTTP} = LLMAgent.Tool.Bindings.adapter_for(:http)
+  ```
   """
 
   @key :llmagent_tool_bindings
@@ -19,11 +34,29 @@ defmodule LLMAgent.Tool.Bindings do
     :ok
   end
 
-  @doc "Return the list of registered binding-kind atoms."
+  @doc """
+  Return the list of registered binding-kind atoms.
+
+  ## Examples
+
+      iex> :module in LLMAgent.Tool.Bindings.list_bindings()
+      true
+  """
   @spec list_bindings() :: [atom()]
   def list_bindings, do: get_all() |> Map.keys()
 
-  @doc "Look up an adapter module by binding kind."
+  @doc """
+  Look up an adapter module by binding kind.
+
+  ## Examples
+
+      iex> {:ok, mod} = LLMAgent.Tool.Bindings.adapter_for(:module)
+      iex> mod
+      LLMAgent.Tool.Adapter.Module
+
+      iex> LLMAgent.Tool.Bindings.adapter_for(:nope)
+      {:error, :not_found}
+  """
   @spec adapter_for(atom()) :: {:ok, module()} | {:error, :not_found}
   def adapter_for(kind) when is_atom(kind) do
     case Map.fetch(get_all(), kind) do
@@ -32,7 +65,14 @@ defmodule LLMAgent.Tool.Bindings do
     end
   end
 
-  @doc "Like `adapter_for/1`, but raises if not found."
+  @doc """
+  Like `adapter_for/1`, but raises if the binding kind is not registered.
+
+  ## Examples
+
+      iex> LLMAgent.Tool.Bindings.adapter_for!(:module)
+      LLMAgent.Tool.Adapter.Module
+  """
   @spec adapter_for!(atom()) :: module()
   def adapter_for!(kind) do
     case adapter_for(kind) do

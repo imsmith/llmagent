@@ -29,6 +29,7 @@ defmodule LLMAgent.DoctestTest do
   doctest LLMAgent.ToolAd
   doctest LLMAgent.ToolQuery
   doctest LLMAgent.Tool.Kinds
+  doctest LLMAgent.Tool.Bindings
 
   # Tools
   doctest LLMAgent.Tools.Bash
