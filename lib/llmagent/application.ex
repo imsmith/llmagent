@@ -7,6 +7,8 @@ defmodule LLMAgent.Application do
   def start(_type, _args) do
     check_system_requirements()
     LLMAgent.Tools.init_registry()
+    LLMAgent.Tool.Kinds.init_registry()
+    LLMAgent.Tool.Bindings.init_registry()
 
     agent_opts = [
       name: LLMAgent,
@@ -25,7 +27,8 @@ defmodule LLMAgent.Application do
       {Registry, keys: :unique, name: LLMAgent.MCP.Registry},
       {DynamicSupervisor, name: LLMAgent.MCP.ConnectionSupervisor, strategy: :one_for_one},
       {Registry, keys: :unique, name: LLMAgent.TupleSpace.Registry},
-      {DynamicSupervisor, name: LLMAgent.TupleSpace.Supervisor, strategy: :one_for_one}
+      {DynamicSupervisor, name: LLMAgent.TupleSpace.Supervisor, strategy: :one_for_one},
+      {LLMAgent.Tools.Discovery, []}
     ]
 
     opts = [strategy: :one_for_one, name: LLMAgent.Supervisor]
