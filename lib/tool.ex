@@ -15,31 +15,13 @@ defmodule LLMAgent.Tool do
           {:ok, %{output: term(), metadata: map()}}
           | {:error, Comn.Errors.ErrorStruct.t()}
 
-  @doc """
-  Returns the authoritative tool advertisement for this tool.
-
-  New tools must implement this callback. Legacy tools may omit it during migration.
-  """
+  @doc "Return the authoritative tool advertisement. New tools implement this; legacy tools may omit during migration."
   @callback ad() :: LLMAgent.ToolAd.t()
 
-  @doc """
-  Returns a human-readable description of this tool.
-
-  Legacy callback; deprecated in favor of `ad/0`. Tools should eventually migrate
-  to the full advertisement structure.
-  """
-  @deprecated "Use ad/0 with kind behaviours instead. See migration plan."
+  @doc "DEPRECATED. Human-readable description; superseded by ad/0. Kept until existing tools migrate."
   @callback describe() :: String.t()
 
-  @doc """
-  Performs a named action with the given arguments.
-
-  Returns `{:ok, %{output: term(), metadata: map()}}` on success or
-  `{:error, Comn.Errors.ErrorStruct.t()}` on failure.
-
-  Legacy callback; deprecated in favor of the kind-based action system.
-  """
-  @deprecated "Use the appropriate kind behaviour callback instead. See migration plan."
+  @doc "DEPRECATED. Perform a named action; superseded by per-kind callbacks. Kept until existing tools migrate."
   @callback perform(action :: String.t(), args :: map()) :: tool_result()
 
   @optional_callbacks ad: 0, describe: 0, perform: 2
