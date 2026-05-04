@@ -3,7 +3,21 @@ defmodule LLMAgent.Tool.Kinds do
   Registry mapping kind atoms to their behaviour modules.
 
   Backed by `:persistent_term` for fast reads. Mutations rewrite the whole map.
-  See spec §3.8.
+  The six canonical kinds (`:query`, `:action`, `:stream`, `:compute`,
+  `:coordinate`, `:spawn`) are seeded at application boot via `init_registry/0`.
+  New kinds are added by writing a behaviour module and calling `register_kind/2`.
+
+  See `docs/superpowers/specs/2026-05-03-tool-discovery-design.md` §3.8.
+
+  ## Registering a new kind
+
+  Define a behaviour module with a `@doc` on every callback, then call
+  `register_kind/2` at boot and `behaviour_for/1` to look it up:
+
+  ```elixir
+  :ok = LLMAgent.Tool.Kinds.register_kind(:notify, MyApp.Tool.Kinds.Notify)
+  {:ok, MyApp.Tool.Kinds.Notify} = LLMAgent.Tool.Kinds.behaviour_for(:notify)
+  ```
   """
 
   @key :llmagent_tool_kinds
@@ -24,11 +38,29 @@ defmodule LLMAgent.Tool.Kinds do
     :ok
   end
 
-  @doc "Return the list of registered kind atoms."
+  @doc """
+  Return the list of registered kind atoms.
+
+  ## Examples
+
+      iex> :compute in LLMAgent.Tool.Kinds.list_kinds()
+      true
+  """
   @spec list_kinds() :: [atom()]
   def list_kinds, do: get_all() |> Map.keys()
 
-  @doc "Look up a kind's behaviour module."
+  @doc """
+  Look up a kind's behaviour module.
+
+  ## Examples
+
+      iex> {:ok, mod} = LLMAgent.Tool.Kinds.behaviour_for(:compute)
+      iex> mod
+      LLMAgent.Tool.Kinds.Compute
+
+      iex> LLMAgent.Tool.Kinds.behaviour_for(:nope)
+      {:error, :not_found}
+  """
   @spec behaviour_for(atom()) :: {:ok, module()} | {:error, :not_found}
   def behaviour_for(kind) when is_atom(kind) do
     case Map.fetch(get_all(), kind) do

@@ -28,6 +28,7 @@ defmodule LLMAgent.DoctestTest do
   # Discovery substrate
   doctest LLMAgent.ToolAd
   doctest LLMAgent.ToolQuery
+  doctest LLMAgent.Tool.Kinds
 
   # Tools
   doctest LLMAgent.Tools.Bash
