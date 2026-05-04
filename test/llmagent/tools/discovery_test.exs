@@ -234,4 +234,39 @@ defmodule LLMAgent.Tools.DiscoveryTest do
       assert {:ok, _} = Discovery.find_one(ToolQuery.new(%{coordinate: "function.dead.x"}))
     end
   end
+
+  describe "lease eviction" do
+    test "expired ads are evicted by manual sweep and emit :tool_removed :lease_expired" do
+      past = DateTime.add(DateTime.utc_now(), -10)
+      a = ad(%{id: "exp", coordinate: "function.exp", lease: {:expires_at, past}})
+      :ok = Discovery.register(a)
+
+      :ok = Discovery.subscribe(ToolQuery.new(%{coordinate: "function.exp"}), self())
+
+      :ok = Discovery.sweep_now()
+
+      assert_receive {:tool_removed, "exp", "function.exp", :lease_expired}, 500
+      assert {:error, :not_found} =
+               Discovery.find_one(ToolQuery.new(%{coordinate: "function.exp"}))
+    end
+
+    test "permanent ads survive sweep" do
+      a = ad(%{id: "perm", coordinate: "function.perm", lease: :permanent})
+      :ok = Discovery.register(a)
+      :ok = Discovery.sweep_now()
+
+      assert {:ok, %{id: "perm"}} =
+               Discovery.find_one(ToolQuery.new(%{coordinate: "function.perm"}))
+    end
+
+    test "future leases survive sweep" do
+      future = DateTime.add(DateTime.utc_now(), 3600)
+      a = ad(%{id: "fut", coordinate: "function.fut", lease: {:expires_at, future}})
+      :ok = Discovery.register(a)
+      :ok = Discovery.sweep_now()
+
+      assert {:ok, %{id: "fut"}} =
+               Discovery.find_one(ToolQuery.new(%{coordinate: "function.fut"}))
+    end
+  end
 end

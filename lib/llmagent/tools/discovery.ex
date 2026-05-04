@@ -49,6 +49,10 @@ defmodule LLMAgent.Tools.Discovery do
   def subscribe(%ToolQuery{} = q, subscriber) when is_pid(subscriber),
     do: GenServer.call(__MODULE__, {:subscribe, q, subscriber})
 
+  @doc "Synchronously sweep expired leases (primarily for tests)."
+  @spec sweep_now() :: :ok
+  def sweep_now, do: GenServer.call(__MODULE__, :sweep_now)
+
   @doc "Find the top-ranked tool ad matching the query."
   @spec find_one(ToolQuery.t()) :: {:ok, ToolAd.t()} | {:error, :not_found}
   def find_one(%ToolQuery{} = q) do
@@ -108,7 +112,7 @@ defmodule LLMAgent.Tools.Discovery do
   # --- GenServer ---
 
   @impl true
-  def init(_opts) do
+  def init(opts) do
     table =
       :ets.new(@table, [
         :set,
@@ -117,12 +121,20 @@ defmodule LLMAgent.Tools.Discovery do
         read_concurrency: true
       ])
 
-    {:ok, %{table: table, subscribers: %{}}}
+    interval = Keyword.get(opts, :sweep_interval_ms, 30_000)
+    schedule_sweep(interval)
+
+    {:ok, %{table: table, subscribers: %{}, sweep_interval_ms: interval}}
   end
 
   @impl true
   def handle_call(:reset, _from, state) do
     :ets.delete_all_objects(@table)
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:sweep_now, _from, state) do
+    do_sweep(state)
     {:reply, :ok, state}
   end
 
@@ -191,6 +203,12 @@ defmodule LLMAgent.Tools.Discovery do
     {:noreply, %{state | subscribers: Map.delete(state.subscribers, ref)}}
   end
 
+  def handle_info(:sweep, state) do
+    do_sweep(state)
+    schedule_sweep(state.sweep_interval_ms)
+    {:noreply, state}
+  end
+
   # --- Matching / ranking ---
 
   defp matches?(%ToolAd{} = ad, %ToolQuery{} = q) do
@@ -230,4 +248,30 @@ defmodule LLMAgent.Tools.Discovery do
 
     :ok
   end
+
+  defp do_sweep(state) do
+    now = DateTime.utc_now()
+
+    expired =
+      :ets.tab2list(@table)
+      |> Enum.flat_map(fn
+        {_id, %ToolAd{lease: {:expires_at, ts}} = ad} ->
+          if DateTime.compare(ts, now) == :lt, do: [ad], else: []
+
+        _ ->
+          []
+      end)
+
+    for ad <- expired do
+      :ets.delete(@table, ad.id)
+      notify_subscribers_removed(state.subscribers, ad, :lease_expired)
+    end
+
+    :ok
+  end
+
+  defp schedule_sweep(interval) when is_integer(interval) and interval > 0,
+    do: Process.send_after(self(), :sweep, interval)
+
+  defp schedule_sweep(_), do: :ok
 end
