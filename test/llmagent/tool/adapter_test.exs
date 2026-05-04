@@ -8,7 +8,7 @@ defmodule LLMAgent.Tool.AdapterTest do
 
       expected = [
         query: 4, act: 5, subscribe: 5, unsubscribe: 3, compute: 4,
-        participate: 5, leave: 3, spawn_child: 4, child_status: 3,
+        participate: 4, leave: 3, spawn_child: 3, child_status: 3,
         terminate_child: 4
       ]
 
@@ -22,8 +22,8 @@ defmodule LLMAgent.Tool.AdapterTest do
       optional = LLMAgent.Tool.Adapter.behaviour_info(:optional_callbacks) |> Enum.sort()
 
       expected = [
-        act: 5, child_status: 3, compute: 4, leave: 3, participate: 5,
-        query: 4, spawn_child: 4, subscribe: 5, terminate_child: 4, unsubscribe: 3
+        act: 5, child_status: 3, compute: 4, leave: 3, participate: 4,
+        query: 4, spawn_child: 3, subscribe: 5, terminate_child: 4, unsubscribe: 3
       ] |> Enum.sort()
 
       assert optional == expected

@@ -33,7 +33,7 @@ defmodule LLMAgent.Tool.Adapter do
 
   @doc "Participate in a coordination session."
   @callback participate(payload :: term(), role :: atom(), args :: map(),
-                        participant :: pid(), opts :: keyword()) ::
+                        opts :: keyword()) ::
               {:ok, reference()} | {:error, term()}
 
   @doc "Leave a coordination session."
@@ -41,7 +41,7 @@ defmodule LLMAgent.Tool.Adapter do
                   opts :: keyword()) :: :ok
 
   @doc "Spawn a child process."
-  @callback spawn_child(payload :: term(), spec :: term(), context :: term(),
+  @callback spawn_child(payload :: term(), spec :: term(),
                         opts :: keyword()) ::
               {:ok, child_ref :: term()} | {:error, term()}
 
@@ -55,6 +55,6 @@ defmodule LLMAgent.Tool.Adapter do
               :ok | {:error, term()}
 
   @optional_callbacks query: 4, act: 5, subscribe: 5, unsubscribe: 3, compute: 4,
-                      participate: 5, leave: 3, spawn_child: 4, child_status: 3,
+                      participate: 4, leave: 3, spawn_child: 3, child_status: 3,
                       terminate_child: 4
 end
