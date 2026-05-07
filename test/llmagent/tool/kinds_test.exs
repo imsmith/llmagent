@@ -10,9 +10,9 @@ defmodule LLMAgent.Tool.KindsTest do
   end
 
   describe "init_registry/0" do
-    test "seeds the canonical six" do
+    test "seeds the canonical seven" do
       assert Kinds.list_kinds() |> Enum.sort() ==
-               [:action, :compute, :coordinate, :query, :spawn, :stream]
+               [:action, :compute, :coordinate, :generate, :query, :spawn, :stream]
     end
 
     test "kind atoms map to behaviour modules" do
@@ -43,6 +43,13 @@ defmodule LLMAgent.Tool.KindsTest do
   describe "behaviour_for/1" do
     test "returns :not_found for unknown kinds" do
       assert {:error, :not_found} = Kinds.behaviour_for(:nope)
+    end
+  end
+
+  describe ":generate kind" do
+    test ":generate is registered as a canonical kind" do
+      assert :generate in Kinds.list_kinds()
+      assert {:ok, LLMAgent.Tool.Kinds.Generate} = Kinds.behaviour_for(:generate)
     end
   end
 end
