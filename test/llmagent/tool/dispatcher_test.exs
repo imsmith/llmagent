@@ -123,6 +123,35 @@ defmodule LLMAgent.Tool.DispatcherTest do
     end
   end
 
+  describe "generate/4" do
+    test "dispatches :generate via adapter.generate/4" do
+      defmodule StubGen do
+        @moduledoc false
+        @behaviour LLMAgent.Tool.Adapter
+        @impl true
+        def generate(payload, action, _args, _opts) do
+          {:ok, "answer for #{action}", %{model: payload.model}}
+        end
+      end
+
+      :ok = LLMAgent.Tool.Bindings.register(:stub_gen, StubGen)
+
+      a = ad(%{
+        id: "gen.test.1",
+        coordinate: "compute.llm.chat",
+        kinds: [:generate],
+        binding: {:stub_gen, %{model: "stub-1"}}
+      })
+
+      :ok = Discovery.update(a)
+
+      policy = %Policy{allow: ["compute.llm.*"], fidelity_min: :authoritative}
+
+      assert {:ok, "answer for chat", %{model: "stub-1"}} =
+               Dispatcher.generate(a, "chat", %{messages: []}, policy: policy)
+    end
+  end
+
   describe "telemetry" do
     test "emits [:llmagent, :tool, :compute] on dispatch" do
       a = ad(%{coordinate: "function.tele", binding: {:module, StubCompute}})
