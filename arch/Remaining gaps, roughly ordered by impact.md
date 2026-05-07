@@ -1,24 +1,16 @@
-  Remaining gaps, roughly ordered by impact and feasibility:                                                                                                                                                                         
+Remaining gaps, roughly ordered by impact and feasibility:
 
-  ┌────────────────────────────┬───────────────────────────────────────────────┬──────────────┬───────────────────────────────────────────────────────────────────────────────┐  │            Gap             │                Design Concept                 │  Difficulty  │                                     Notes                                                                                          
-  ├────────────────────────────┼───────────────────────────────────────────────┼──────────────┼───────────────────────────────────────────────────────────────────────────────┤
-  │ Session management         │ Conversations, resets, scoping                │ Medium       │ Builds on Memory — store/restore named sessions, not just :history            │                                                      
-  ├────────────────────────────┼───────────────────────────────────────────────┼──────────────┼───────────────────────────────────────────────────────────────────────────────┤
-  │ Tool access control        │ Policy/allowlist per agent                    │ Medium       │ Agent state carries a tool policy; dispatch_tool checks before calling    │                                                      
-  ├────────────────────────────┼───────────────────────────────────────────────┼──────────────┼───────────────────────────────────────────────────────────────────────────────┤
-  │ Chain/pipeline abstraction │ Composable prompt→tool→result flows           │ Medium       │ The agent loop is a chain; question is whether to make it explicit/composable │
-  ├────────────────────────────┼───────────────────────────────────────────────┼──────────────┼───────────────────────────────────────────────────────────────────────────────┤
-  │ Extension model            │ Add tools without modifying source            │ Medium       │ Tool registry from config or discovery instead of hardcoded Tools module      │
-  ├────────────────────────────┼───────────────────────────────────────────────┼──────────────┼───────────────────────────────────────────────────────────────────────────────┤
-  │ Tuple space                │ Linda/JavaSpaces for multi-agent coordination │ Hard         │ The BEAM differentiator — ETS-backed out/in/rd with pattern matching          │
-  ├────────────────────────────┼───────────────────────────────────────────────┼──────────────┼───────────────────────────────────────────────────────────────────────────────┤
-  │ Streaming                  │ Chunked LLM responses                         │ Medium       │ Needs LLMClient behaviour extension + GenServer callback changes              │
-  ├────────────────────────────┼───────────────────────────────────────────────┼──────────────┼───────────────────────────────────────────────────────────────────────────────┤
-  │ NATS integration           │ Cross-runtime messaging                       │ Medium       │ Comn already has Comn.Events.NATS — wire it through EventBus                  │
-  ├────────────────────────────┼───────────────────────────────────────────────┼──────────────┼───────────────────────────────────────────────────────────────────────────────┤
-  │ Retriever/RAG              │ Vector store retrieval                        │ Hard         │ Needs external dependency (pgvector, Pinecone, etc.)                          │
-  ├────────────────────────────┼───────────────────────────────────────────────┼──────────────┼───────────────────────────────────────────────────────────────────────────────┤
-  │ DSL macros                 │ deftool, defchain                             │ Low priority │ Correctly deferred — semantics aren't stable enough yet                       │
-  └────────────────────────────┴───────────────────────────────────────────────┴──────────────┴───────────────────────────────────────────────────────────────────────────────┘
+| Gap | Design Concept | Difficulty | Status | Notes |
+| --- | --- | --- | --- | --- |
+| Tuple space | Linda/JavaSpaces for multi-agent coordination | Hard | Done | ETS-backed out/in/rd with pattern matching in `lib/llmagent/tuple_space/`; tool wrapper at `lib/tools/tuple_space.ex` |
+| Tool access control | Policy/allowlist per agent | Medium | Done | `allowed_tools` enforced in dispatch; agent state carries the policy |
+| Agent orchestration | Spawn/kill/list/status subagents | Medium | Done | `lib/tools/agent.ex` + `LLMAgent.AgentSupervisor`; children write results to tuple space, parent monitors for orphans |
+| Session management | Conversations, resets, scoping | Medium | Open | Builds on Memory — store/restore named sessions, not just :history |
+| Chain/pipeline abstraction | Composable prompt→tool→result flows | Medium | Open | The agent loop is a chain; question is whether to make it explicit/composable |
+| Extension model | Add tools without modifying source | Medium | Open | Tool registry from config or discovery instead of hardcoded Tools module |
+| Streaming | Chunked LLM responses | Medium | Open | Needs LLMClient behaviour extension + GenServer callback changes |
+| NATS integration | Cross-runtime messaging | Medium | Open | Comn already has Comn.Events.NATS — wire it through EventBus |
+| Retriever/RAG | Vector store retrieval | Hard | Open | Needs external dependency (pgvector, Pinecone, etc.) |
+| DSL macros | deftool, defchain | Low priority | Deferred | Semantics aren't stable enough yet |
 
-  The tuple space is the architectural differentiator. Session management and tool access control are the most practical next steps. What's pulling you?
+Of the remaining open items, session management and the extension model are the most practical next steps. NATS would unlock cross-runtime work. What's pulling you?
