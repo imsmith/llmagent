@@ -36,6 +36,7 @@ defmodule LLMAgent.MixProject do
       {:req, "~> 0.5.0"},
       {:jason, "~> 1.4"},
       {:b58, "~> 1.0"},
+      {:eden, "~> 2.1"},
       {:comn, github: "imsmith/comn", tag: "v0.4.0"}
     ]
   end
