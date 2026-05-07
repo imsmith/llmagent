@@ -98,6 +98,22 @@ defmodule LLMAgent.Tool.Dispatcher do
     do: dispatch(ad_or_coord, :compute, action, args, opts)
 
   @doc """
+  Produce a stochastic output via a generate-kind tool.
+
+  Dispatches via the `:generate` kind. The ad must declare `:generate` in its
+  `kinds` list and its binding adapter must implement `generate/4`.
+
+  Unlike `:compute`, results are not expected to be deterministic — the same
+  inputs may yield different outputs (e.g. LLM completions, image generation).
+  Safely retryable but must not be cached by input hash. Returns
+  `{:ok, value, provenance}` on success where `provenance` carries model id,
+  latency, token counts, and any other adapter-specific observations.
+  """
+  @spec generate(ToolAd.t() | String.t(), String.t(), map(), opts()) :: result()
+  def generate(ad_or_coord, action, args, opts \\ []),
+    do: dispatch(ad_or_coord, :generate, action, args, opts)
+
+  @doc """
   Participate in coordination via a coordinate-kind tool.
 
   Dispatches via the `:coordinate` kind. `role` is an atom passed to the
@@ -187,6 +203,9 @@ defmodule LLMAgent.Tool.Dispatcher do
 
   defp invoke(adapter, :compute, payload, action, args, opts),
     do: adapter.compute(payload, action, args, opts)
+
+  defp invoke(adapter, :generate, payload, action, args, opts),
+    do: adapter.generate(payload, action, args, opts)
 
   defp invoke(adapter, :coordinate, payload, role, args, opts),
     do: adapter.participate(payload, role, args, opts)

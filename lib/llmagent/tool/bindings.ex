@@ -25,7 +25,10 @@ defmodule LLMAgent.Tool.Bindings do
 
   @key :llmagent_tool_bindings
 
-  @canonical %{module: LLMAgent.Tool.Adapter.Module}
+  @canonical %{
+    module: LLMAgent.Tool.Adapter.Module,
+    openai_chat: LLMAgent.Tool.Adapter.OpenAIChat
+  }
 
   @doc "Seed the registry with canonical bindings."
   @spec init_registry() :: :ok

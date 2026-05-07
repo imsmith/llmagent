@@ -3,8 +3,8 @@ defmodule LLMAgent.Tool.Kinds do
   Registry mapping kind atoms to their behaviour modules.
 
   Backed by `:persistent_term` for fast reads. Mutations rewrite the whole map.
-  The six canonical kinds (`:query`, `:action`, `:stream`, `:compute`,
-  `:coordinate`, `:spawn`) are seeded at application boot via `init_registry/0`.
+  The seven canonical kinds (`:query`, `:action`, `:stream`, `:compute`,
+  `:coordinate`, `:spawn`, `:generate`) are seeded at application boot via `init_registry/0`.
   New kinds are added by writing a behaviour module and calling `register_kind/2`.
 
   See `docs/superpowers/specs/2026-05-03-tool-discovery-design.md` §3.8.
@@ -28,10 +28,11 @@ defmodule LLMAgent.Tool.Kinds do
     stream:     LLMAgent.Tool.Kinds.Stream,
     compute:    LLMAgent.Tool.Kinds.Compute,
     coordinate: LLMAgent.Tool.Kinds.Coordinate,
-    spawn:      LLMAgent.Tool.Kinds.SpawnKind
+    spawn:      LLMAgent.Tool.Kinds.SpawnKind,
+    generate:   LLMAgent.Tool.Kinds.Generate
   }
 
-  @doc "Seed the registry with the canonical six kinds."
+  @doc "Seed the registry with the canonical seven kinds."
   @spec init_registry() :: :ok
   def init_registry do
     :persistent_term.put(@key, @canonical)

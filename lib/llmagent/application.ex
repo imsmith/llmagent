@@ -28,11 +28,18 @@ defmodule LLMAgent.Application do
       {DynamicSupervisor, name: LLMAgent.MCP.ConnectionSupervisor, strategy: :one_for_one},
       {Registry, keys: :unique, name: LLMAgent.TupleSpace.Registry},
       {DynamicSupervisor, name: LLMAgent.TupleSpace.Supervisor, strategy: :one_for_one},
-      {LLMAgent.Tools.Discovery, []}
+      {LLMAgent.Tools.Discovery, []},
+      {LLMAgent.Discovery.AdapterSupervisor, []}
     ]
 
     opts = [strategy: :one_for_one, name: LLMAgent.Supervisor]
     {:ok, sup} = Supervisor.start_link(children, opts)
+
+    Enum.each(
+      Application.get_env(:LLMAgent, :discovery_adapters, []),
+      &LLMAgent.Discovery.AdapterSupervisor.start_adapter/1
+    )
+
     LLMAgent.AgentSupervisor.start_agent(agent_opts)
     LLMAgent.TupleSpace.start_space(:default)
     {:ok, sup}

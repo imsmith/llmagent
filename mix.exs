@@ -32,10 +32,12 @@ defmodule LLMAgent.MixProject do
   defp deps do
     [
       {:mix_test_watch, "~> 1.1", only: [:dev], runtime: false},
+      {:bypass, "~> 2.1", only: :test},
       {:plug, "~> 1.16", only: [:test]},
       {:req, "~> 0.5.0"},
       {:jason, "~> 1.4"},
       {:b58, "~> 1.0"},
+      {:eden, "~> 2.1"},
       {:comn, github: "imsmith/comn", tag: "v0.4.0"}
     ]
   end
