@@ -119,7 +119,7 @@ defmodule LLMAgent.Discovery.Wire do
 
       {:ok, ad}
     rescue
-      e in [KeyError, ArgumentError] -> {:error, e}
+      e in [KeyError, ArgumentError, MatchError] -> {:error, e}
     end
   end
 
