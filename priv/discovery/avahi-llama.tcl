@@ -101,8 +101,12 @@ proc handle_line {line} {
             set host [lindex $parts 6]
             set addr [lindex $parts 7]
             set port [lindex $parts 8]
-            set txts [lrange $parts 9 end]
-            set txt  [parse_txt $txts]
+            # Column 9 is a single string of space-separated, double-quoted
+            # TXT records: `"n_ctx=262144" "slots=4" ...`. Pass it directly
+            # so parse_txt's foreach iterates each quoted record as a list
+            # element. lrange would wrap it back into a 1-element list and
+            # break the iteration.
+            set txt [parse_txt [lindex $parts 9]]
             set id   [ad_id $host $port]
             set instances($key) $id
             emit_register $id $host $addr $port $txt
