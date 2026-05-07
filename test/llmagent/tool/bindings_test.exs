@@ -46,4 +46,12 @@ defmodule LLMAgent.Tool.BindingsTest do
       end
     end
   end
+
+  describe "canonical bindings" do
+    test ":openai_chat is registered at boot" do
+      Bindings.init_registry()
+      assert {:ok, LLMAgent.Tool.Adapter.OpenAIChat} =
+               Bindings.adapter_for(:openai_chat)
+    end
+  end
 end
