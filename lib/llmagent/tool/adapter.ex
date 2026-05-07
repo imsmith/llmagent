@@ -83,6 +83,11 @@ defmodule LLMAgent.Tool.Adapter do
                     opts :: keyword()) ::
               {:ok, value()} | {:error, error_reason()}
 
+  @doc "Produce a stochastic output. Retryable but not cacheable."
+  @callback generate(payload(), action :: String.t(), args :: map(),
+                     opts :: keyword()) ::
+              {:ok, value(), meta()} | {:error, error_reason()}
+
   @doc "Participate in a coordination session."
   @callback participate(payload(), role :: atom(), args :: map(),
                         opts :: keyword()) ::
@@ -107,6 +112,6 @@ defmodule LLMAgent.Tool.Adapter do
               :ok | {:error, error_reason()}
 
   @optional_callbacks query: 4, act: 5, subscribe: 5, unsubscribe: 3, compute: 4,
-                      participate: 4, leave: 3, spawn_child: 3, child_status: 3,
-                      terminate_child: 4
+                      generate: 4, participate: 4, leave: 3, spawn_child: 3,
+                      child_status: 3, terminate_child: 4
 end
