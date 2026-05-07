@@ -32,6 +32,7 @@ defmodule LLMAgent.MixProject do
   defp deps do
     [
       {:mix_test_watch, "~> 1.1", only: [:dev], runtime: false},
+      {:bypass, "~> 2.1", only: :test},
       {:plug, "~> 1.16", only: [:test]},
       {:req, "~> 0.5.0"},
       {:jason, "~> 1.4"},
