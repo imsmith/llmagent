@@ -122,7 +122,12 @@ proc handle_line {line} {
 }
 
 # Spawn avahi-browse as a child. -p parsable, -r resolve, no -t (long-running).
-set browse "|avahi-browse -p -r _llama._tcp 2>@stderr"
+# `stdbuf -oL` forces avahi-browse to line-buffer stdout. Without it,
+# avahi block-buffers when piped (non-TTY); under a BEAM Erlang Port nothing
+# ever triggers a flush, so the shim looks silent even though records are
+# arriving. Standalone runs with `| head -3` got SIGPIPE which flushed the
+# buffer — that masked this for a while.
+set browse "|stdbuf -oL avahi-browse -p -r _llama._tcp 2>@stderr"
 set chan [open $browse r]
 fconfigure $chan -buffering line
 
