@@ -195,6 +195,60 @@ LLMAgent.AgentSupervisor.stop_agent(:agent_two)
 rm data/llmagent_events.dets
 ```
 
+## Discovering LLM endpoints over mDNS
+
+If you have one or more `llama.cpp` servers on the LAN announcing themselves over mDNS as `_llama._tcp` (e.g. via `avahi-publish-service` or built-in `--mdns`), the agent can pick them up automatically.
+
+Prerequisites on the host running LLMAgent:
+
+```bash
+sudo apt install -y avahi-utils tcl
+```
+
+Add a discovery adapter to `config/runtime.exs`:
+
+```elixir
+config :LLMAgent, :discovery_adapters, [
+  %{name: :avahi_llama,
+    command: System.find_executable("tclsh"),
+    args: [Path.expand("priv/discovery/avahi-llama.tcl", File.cwd!())],
+    env: []}
+]
+```
+
+Restart iex (full exit, not `r/0` — `runtime.exs` is read once at boot). The application starts the Tcl shim under `LLMAgent.Discovery.AdapterSupervisor`; the shim wraps `avahi-browse -p -r _llama._tcp` and ships register/expire EDN events into `LLMAgent.Tools.Discovery`.
+
+Verify discovery:
+
+```elixir
+# Confirm the adapter is alive
+DynamicSupervisor.which_children(LLMAgent.Discovery.AdapterSupervisor)
+# [{:undefined, #PID<...>, :worker, [LLMAgent.Discovery.PortAdapter]}]
+
+# Wait ~2s for the shim to enumerate the cache and emit
+:timer.sleep(2000)
+
+# Find the ads
+LLMAgent.Tools.Discovery.find_all(LLMAgent.ToolQuery.new(%{coordinate: "compute.llm.chat"}))
+# {:ok, [%ToolAd{id: "mdns:_llama._tcp:skynet001.local:8080", ...}, ...]}
+```
+
+Dispatch a real call. The dispatcher denies by default — pass an explicit policy:
+
+```elixir
+{:ok, [ad | _]} = LLMAgent.Tools.Discovery.find_all(
+  LLMAgent.ToolQuery.new(%{coordinate: "compute.llm.chat"}))
+
+policy = %LLMAgent.Tool.Policy{allow: ["compute.llm.*"]}
+
+LLMAgent.Tool.Dispatcher.generate(ad, "chat",
+  %{messages: [%{"role" => "user", "content" => "say hi in one sentence"}]},
+  policy: policy)
+# {:ok, "Hi there!", %{model: "gemma-4-26B-A4B-it-Q4_K_M.gguf", latency_ms: 6474}}
+```
+
+Each TXT record's `n_ctx` lands in `affordance.declared`, `slots` becomes `operational.actions["chat"].concurrency`, and `model` is carried in the binding payload — so capability-based selection (e.g. "give me an endpoint with ≥32k context") falls out of `ToolQuery` filters.
+
 ## Agent orchestration
 
 The `agent` tool spawns child agents under the existing `AgentSupervisor`, and

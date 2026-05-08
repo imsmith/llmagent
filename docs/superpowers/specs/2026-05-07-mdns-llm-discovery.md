@@ -114,3 +114,39 @@ The application starts a `DynamicSupervisor` (`LLMAgent.Discovery.AdapterSupervi
 - Unit tests: EDN codec round-trip, `Generate` behaviour shape, `OpenAIChat` adapter delegation, `PortAdapter` parses fake-shim output and registers correctly.
 - Integration test (skipped in CI, `@tag :requires_avahi`): runs the real Tcl shim against a fake `avahi-browse` script in a tmpdir, asserts a `_llama._tcp` record produces a discoverable ad.
 - Manual validation: with both LAN llama-server hosts visible, `LLMAgent.Tools.Discovery.find_all/1` for `coordinate: "compute.llm.chat"` returns two ads; killing one causes its ad to expire within 60s.
+
+## Manual smoke validation results (2026-05-07)
+
+End-to-end exercised against two LAN llama-servers:
+
+- `skynet001.18020.home.arpa` (10.10.1.226:8080) — `gemma-4-26B-A4B-it-Q4_K_M.gguf`, `n_ctx=262144`, 4 slots
+- `skynet002.18020.home.arpa` (10.10.1.229:8080) — `mistral-7b-instruct-v0.2.Q8_0.gguf`, `n_ctx=32768`, 4 slots
+
+After `iex -S mix` boot:
+
+```elixir
+LLMAgent.Tools.Discovery.find_all(LLMAgent.ToolQuery.new(%{coordinate: "compute.llm.chat"}))
+# {:ok, [%ToolAd{id: "mdns:_llama._tcp:skynet001.local:8080", ...}, %ToolAd{...skynet002...}]}
+
+policy = %LLMAgent.Tool.Policy{allow: ["compute.llm.*"]}
+LLMAgent.Tool.Dispatcher.generate(ad, "chat",
+  %{messages: [%{"role" => "user", "content" => "in one sentence: who are you?"}]},
+  policy: policy)
+# {:ok, "I am a large language model, trained by Google.",
+#  %{model: "gemma-4-26B-A4B-it-Q4_K_M.gguf", latency_ms: 6474}}
+```
+
+Both ads registered within ~2s of boot; `:expires_at` lease maps to `now + 60s` and is renewed on each avahi rebroadcast. Round-trip dispatch through `OpenAIChat` adapter to the real llama.cpp server returned correct content + provenance.
+
+## Bugs surfaced during validation (both fixed)
+
+Two integration-class bugs not caught by the unit suite:
+
+1. **Tcl `lrange` vs `lindex`** in `parse_txt`. avahi-browse parsable output puts all TXT records as a single space-separated, double-quoted blob in column 9. `lrange $parts 9 end` wrapped that blob in another list, so `foreach` iterated one element instead of each `"key=value"` pair. Result: only one (broken) entry, `api` field empty, filter rejected everything, no output. Fix in commit `f13c65b`: `lindex $parts 9` so foreach treats the blob as a Tcl list.
+2. **`avahi-browse` block-buffers stdout when not a TTY.** Under an Erlang Port the pipe is not a TTY, so glibc switched stdout to block-buffering and records sat in buffer indefinitely. Standalone tests with `| head -3` got SIGPIPE on tclsh exit which force-flushed, masking this for hours. Fix in commit `59802ac`: prefix the avahi command with `stdbuf -oL`.
+
+Both bugs were invisible to `Wire`-codec unit tests, `PortAdapter` tests with the fake-shim helper, and reviewer subagents. Lesson captured in `feedback_discovery_integration_tests.md`: every new shim needs an integration test running the *real shim binary* against a fake source script, not just unit-level mocks.
+
+## Deny-by-default policy gotcha
+
+`Tool.Dispatcher` returns `{:error, :forbidden, :not_allowed}` unless the caller passes a `%Policy{}` whose `allow` list matches the ad's coordinate. A perfectly-discovered llama.cpp endpoint refused to dispatch until `policy: %Policy{allow: ["compute.llm.*"]}` was passed in opts. Intentional substrate behaviour but load-bearing for the future `LLMAgent.dispatch_tool/3` → `Tool.Dispatcher` migration — that migration must supply a default policy or per-call policy injection (or use `Policy.from_legacy/1` to translate the existing `allowed_tools` keyword list). See memory `project_dispatcher_default_policy.md`.

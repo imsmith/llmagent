@@ -7,7 +7,7 @@ Remaining gaps, roughly ordered by impact and feasibility:
 | Agent orchestration | Spawn/kill/list/status subagents | Medium | Done | `lib/tools/agent.ex` + `LLMAgent.AgentSupervisor`; children write results to tuple space, parent monitors for orphans |
 | Session management | Conversations, resets, scoping | Medium | Open | Builds on Memory — store/restore named sessions, not just :history |
 | Chain/pipeline abstraction | Composable prompt→tool→result flows | Medium | Open | The agent loop is a chain; question is whether to make it explicit/composable |
-| Extension model | Add tools without modifying source | Medium | Open | Tool registry from config or discovery instead of hardcoded Tools module |
+| Extension model | Add tools without modifying source | Medium | Substrate done, migrations in progress | Discovery substrate landed 2026-05-03 (`Tools.Discovery`, `Tool.Dispatcher`, six canonical kinds, open binding registry). First real consumer landed 2026-05-07: mDNS-driven LLM endpoint discovery via `priv/discovery/avahi-llama.tcl` → `Discovery.PortAdapter`. Per-tool migrations from the legacy `LLMAgent.Tools` registry are next. |
 | Streaming | Chunked LLM responses | Medium | Open | Needs LLMClient behaviour extension + GenServer callback changes |
 | NATS integration | Cross-runtime messaging | Medium | Open | Comn already has Comn.Events.NATS — wire it through EventBus |
 | Retriever/RAG | Vector store retrieval | Hard | Open | Needs external dependency (pgvector, Pinecone, etc.) |
