@@ -11,6 +11,8 @@ defmodule LLMAgent.Tools.Systemd do
   """
 
   @behaviour LLMAgent.Tool
+  @behaviour LLMAgent.Tool.Kinds.Query
+  @behaviour LLMAgent.Tool.Kinds.Action
   alias Comn.Errors.ErrorStruct
 
   @doc """
@@ -35,6 +37,75 @@ defmodule LLMAgent.Tools.Systemd do
       - list: list running services
     """
   end
+
+  @doc "Authoritative tool ad."
+  @spec ad() :: LLMAgent.ToolAd.t()
+  def ad do
+    LLMAgent.ToolAd.new(%{
+      id: "builtin.systemd",
+      coordinate: "function.systemd",
+      kinds: [:query, :action],
+      binding: {:module, __MODULE__},
+      operational: %{
+        actions: %{
+          "status"  => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "list"    => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "start"   => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "stop"    => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "restart" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
+        }
+      },
+      constraint: %{
+        idempotency: %{
+          "status"  => :idempotent,
+          "list"    => :idempotent,
+          "start"   => :non_idempotent,
+          "stop"    => :non_idempotent,
+          "restart" => :non_idempotent
+        },
+        blast_radius: %{
+          "status"  => :local,
+          "list"    => :local,
+          "start"   => :system,
+          "stop"    => :system,
+          "restart" => :system
+        }
+      },
+      affordance: %{
+        declared: [%{
+          intent: "inspect and control systemd units",
+          suits: "service management on Linux hosts",
+          avoid_when: "the target host doesn't run systemd"
+        }],
+        learned: [],
+        open: false
+      },
+      fidelity: :authoritative,
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      lease: :permanent,
+      meta: %{}
+    })
+  end
+
+  @impl LLMAgent.Tool.Kinds.Query
+  def query(action, args) when action in ["status", "list"] do
+    case perform(action, args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
+
+  def query(_, _), do: {:error, :unknown_action}
+
+  @impl LLMAgent.Tool.Kinds.Action
+  def act(action, args, _idempotency_key) when action in ["start", "stop", "restart"] do
+    case perform(action, args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
+
+  def act(_, _, _), do: {:error, :unknown_action}
 
   @doc ~S"""
   Perform a systemd action.
