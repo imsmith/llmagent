@@ -12,8 +12,60 @@ defmodule LLMAgent.Tools.Inotify do
   """
 
   @behaviour LLMAgent.Tool
+  @behaviour LLMAgent.Tool.Kinds.Stream
   alias Comn.Errors.ErrorStruct
   alias LLMAgent.Tools.Inotify.Watcher
+
+  @doc "Authoritative tool ad."
+  @spec ad() :: LLMAgent.ToolAd.t()
+  def ad do
+    LLMAgent.ToolAd.new(%{
+      id: "builtin.inotify",
+      coordinate: "resource.fs.events",
+      kinds: [:stream],
+      binding: {:module, __MODULE__},
+      operational: %{
+        actions: %{"watch" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}}
+      },
+      constraint: %{
+        idempotency: %{"watch" => :unknown},
+        blast_radius: %{"watch" => :local}
+      },
+      affordance: %{
+        declared: [%{
+          intent: "subscribe to filesystem events for a path",
+          suits: "fs change detection",
+          avoid_when: "the path does not exist yet"
+        }],
+        learned: [],
+        open: false
+      },
+      fidelity: :authoritative,
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      lease: :permanent,
+      meta: %{}
+    })
+  end
+
+  @impl LLMAgent.Tool.Kinds.Stream
+  def subscribe("watch", %{"path" => path}, _subscriber) do
+    case perform("watch", %{"path" => path}) do
+      {:ok, %{output: watch_id}} -> {:ok, {:inotify_watch, watch_id}}
+      {:error, _} = err -> err
+    end
+  end
+
+  def subscribe(_, _, _), do: {:error, :unknown_action}
+
+  @impl LLMAgent.Tool.Kinds.Stream
+  def unsubscribe({:inotify_watch, watch_id}) do
+    case perform("stop", %{"watch_id" => watch_id}) do
+      {:ok, _} -> :ok
+      {:error, _} = err -> err
+    end
+  end
+
+  def unsubscribe(_), do: {:error, :invalid_sub_ref}
 
   @doc """
   Returns a human-readable description of the Inotify tool.

@@ -1,4 +1,5 @@
 defmodule LLMAgent.Tools.InotifyTest do
+  @moduledoc false
   use ExUnit.Case, async: false
 
   alias LLMAgent.Tools.Inotify
@@ -156,6 +157,39 @@ defmodule LLMAgent.Tools.InotifyTest do
 
     test "unknown action returns error" do
       {:error, %ErrorStruct{reason: "unknown_command"}} = Inotify.perform("not_real", %{})
+    end
+  end
+
+  describe "tool-discovery substrate (via Dispatcher)" do
+    alias LLMAgent.{Tools.Inotify, Tools.Discovery, Tool.Dispatcher, Tool.Policy}
+
+    setup do
+      case Process.whereis(Discovery) do
+        nil -> {:ok, _} = Discovery.start_link(consume_announcements: false)
+        _ -> Discovery.reset!()
+      end
+
+      LLMAgent.Tool.Bindings.init_registry()
+      LLMAgent.Tool.Kinds.init_registry()
+      :ok = Discovery.register(Inotify.ad())
+      :ok
+    end
+
+    test "ad/0 returns a ToolAd for resource.fs.events with :stream kind" do
+      ad = Inotify.ad()
+      assert ad.coordinate == "resource.fs.events"
+      assert :stream in ad.kinds
+    end
+
+    @tag :tmp_dir
+    test "dispatcher.subscribe/5 watch returns {:ok, sub_ref}", %{tmp_dir: dir} do
+      policy = %Policy{allow: ["resource.fs.events"], fidelity_min: :authoritative}
+
+      {:ok, sub_ref} =
+        Dispatcher.subscribe("resource.fs.events", "watch", %{"path" => dir},
+          self(), policy: policy)
+
+      assert match?({:inotify_watch, _}, sub_ref)
     end
   end
 
