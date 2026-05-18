@@ -12,8 +12,55 @@ defmodule LLMAgent.Tools.Crypto do
   """
 
   @behaviour LLMAgent.Tool
+  @behaviour LLMAgent.Tool.Kinds.Compute
+
   alias LLMAgent.Utils.Encoder
   alias Comn.Errors.ErrorStruct
+
+  @doc """
+  Authoritative tool ad. Registered at boot by `LLMAgent.Tools.Builtins`.
+  """
+  @spec ad() :: LLMAgent.ToolAd.t()
+  def ad do
+    actions = ~w(sha256 hmac generate_key generate_keypair sign verify)
+
+    LLMAgent.ToolAd.new(%{
+      id: "builtin.crypto",
+      coordinate: "function.crypto",
+      kinds: [:compute],
+      binding: {:module, __MODULE__},
+      operational: %{
+        actions:
+          Map.new(actions, fn a ->
+            {a, %{inputs: %{}, outputs: %{}, pre: nil, post: nil}}
+          end)
+      },
+      constraint: %{
+        idempotency: Map.new(actions, &{&1, :idempotent}),
+        blast_radius: Map.new(actions, &{&1, :pure})
+      },
+      affordance: %{
+        declared: [
+          %{
+            intent: "hash, sign, verify, or generate cryptographic material",
+            suits: "any tool/agent that needs deterministic crypto operations",
+            avoid_when: "the input must be kept off-disk — Crypto returns base64/hex by default"
+          }
+        ],
+        learned: [],
+        open: false
+      },
+      fidelity: :authoritative,
+      provenance: %{
+        source: "llmagent.builtin",
+        produced_at: ~U[2026-05-18 00:00:00Z],
+        based_on: [],
+        signature: nil
+      },
+      lease: :permanent,
+      meta: %{}
+    })
+  end
 
   @doc """
   Returns a human-readable description of the Crypto tool.
@@ -172,6 +219,14 @@ defmodule LLMAgent.Tools.Crypto do
 
   def perform(_, _),
     do: {:error, ErrorStruct.new("unknown_command", nil, "Unrecognized Crypto action")}
+
+  @impl LLMAgent.Tool.Kinds.Compute
+  def compute(action, args) do
+    case perform(action, args) do
+      {:ok, %{output: out}} -> {:ok, out}
+      {:error, _} = err -> err
+    end
+  end
 
   defp encode(raw, args, metadata) do
     encoding = Map.get(args, "encoding", "base16")
