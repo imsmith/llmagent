@@ -1,6 +1,7 @@
 defmodule LLMAgent.Tools.Net do
   @moduledoc "Provides structured access to network interface, IP, and connectivity data."
   @behaviour LLMAgent.Tool
+  @behaviour LLMAgent.Tool.Kinds.Query
   alias Comn.Errors.ErrorStruct
 
   @doc """
@@ -91,6 +92,45 @@ defmodule LLMAgent.Tools.Net do
 
   def perform(_, _),
     do: {:error, ErrorStruct.new("unknown_command", nil, "Unrecognized Net action")}
+
+  @doc "Authoritative tool ad."
+  @spec ad() :: LLMAgent.ToolAd.t()
+  def ad do
+    actions = ~w(list_interfaces ping resolve)
+
+    LLMAgent.ToolAd.new(%{
+      id: "builtin.net",
+      coordinate: "resource.network",
+      kinds: [:query],
+      binding: {:module, __MODULE__},
+      operational: %{
+        actions: Map.new(actions, &{&1, %{inputs: %{}, outputs: %{}, pre: nil, post: nil}})
+      },
+      constraint: %{
+        idempotency: Map.new(actions, &{&1, :idempotent}),
+        blast_radius: Map.new(actions, &{&1, :local})
+      },
+      affordance: %{
+        declared: [
+          %{intent: "inspect local network state", suits: "diagnostic and discovery flows", avoid_when: nil}
+        ],
+        learned: [],
+        open: false
+      },
+      fidelity: :authoritative,
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      lease: :permanent,
+      meta: %{}
+    })
+  end
+
+  @impl LLMAgent.Tool.Kinds.Query
+  def query(action, args) do
+    case perform(action, args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
 
   defp parse_ping_rtt(output) do
     case Regex.run(~r|rtt min/avg/max/mdev = ([\d.]+)/([\d.]+)/([\d.]+)/([\d.]+)|, output) do
