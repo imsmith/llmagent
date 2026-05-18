@@ -10,6 +10,7 @@ defmodule LLMAgent.Tools.Udev do
   """
 
   @behaviour LLMAgent.Tool
+  @behaviour LLMAgent.Tool.Kinds.Query
   alias Comn.Errors.ErrorStruct
 
   @doc """
@@ -94,6 +95,45 @@ defmodule LLMAgent.Tools.Udev do
 
   def perform(_, _),
     do: {:error, ErrorStruct.new("unknown_command", nil, "Unrecognized Udev action")}
+
+  @doc "Authoritative tool ad."
+  @spec ad() :: LLMAgent.ToolAd.t()
+  def ad do
+    actions = ~w(list info usb pci)
+
+    LLMAgent.ToolAd.new(%{
+      id: "builtin.udev",
+      coordinate: "resource.hardware.events",
+      kinds: [:query],
+      binding: {:module, __MODULE__},
+      operational: %{
+        actions: Map.new(actions, &{&1, %{inputs: %{}, outputs: %{}, pre: nil, post: nil}})
+      },
+      constraint: %{
+        idempotency: Map.new(actions, &{&1, :idempotent}),
+        blast_radius: Map.new(actions, &{&1, :local})
+      },
+      affordance: %{
+        declared: [
+          %{intent: "enumerate and inspect connected hardware devices", suits: "device discovery and diagnostics flows", avoid_when: nil}
+        ],
+        learned: [],
+        open: false
+      },
+      fidelity: :authoritative,
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      lease: :permanent,
+      meta: %{}
+    })
+  end
+
+  @impl LLMAgent.Tool.Kinds.Query
+  def query(action, args) do
+    case perform(action, args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
 
   defp parse_udevadm(text) do
     text
