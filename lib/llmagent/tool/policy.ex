@@ -33,6 +33,7 @@ defmodule LLMAgent.Tool.Policy do
   @enforce_keys []
   defstruct allow: [],
             deny: [],
+            require_approval: [],
             fidelity_min: :trained,
             provenance: nil
 
@@ -57,6 +58,7 @@ defmodule LLMAgent.Tool.Policy do
   @type t :: %__MODULE__{
           allow: [String.t() | policy_rule()],
           deny: [String.t() | policy_rule()],
+          require_approval: [String.t() | policy_rule()],
           fidelity_min: :authoritative | :trained | :speculative,
           provenance: %{source: [String.t()] | :any, signed: boolean()} | nil
         }
@@ -132,6 +134,14 @@ defmodule LLMAgent.Tool.Policy do
   end
 
   @doc """
+  Return `true` if any `require_approval` rule in `policy` matches `(ad, kind, action)`.
+  """
+  @spec requires_approval?(t(), ToolAd.t(), atom(), String.t()) :: boolean()
+  def requires_approval?(%__MODULE__{require_approval: rules}, %ToolAd{} = ad, kind, action) do
+    Enum.any?(rules, &rule_matches?(&1, ad, kind, action))
+  end
+
+  @doc """
   Intersect (narrow) two policies. The result is at least as restrictive as
   either input.
 
@@ -155,6 +165,7 @@ defmodule LLMAgent.Tool.Policy do
     %__MODULE__{
       allow: intersect_rule_lists(base.allow, override.allow),
       deny: base.deny ++ override.deny,
+      require_approval: base.require_approval ++ override.require_approval,
       fidelity_min: stricter_fidelity(base.fidelity_min, override.fidelity_min),
       provenance: stricter_provenance(base.provenance, override.provenance)
     }

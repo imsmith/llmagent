@@ -9,6 +9,7 @@ defmodule LLMAgent.Application do
     LLMAgent.Tools.init_registry()
     LLMAgent.Tool.Kinds.init_registry()
     LLMAgent.Tool.Bindings.init_registry()
+    LLMAgent.Tool.Dispatcher.init_approvals()
 
     agent_opts = [
       name: LLMAgent,

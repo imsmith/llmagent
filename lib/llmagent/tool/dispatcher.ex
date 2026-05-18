@@ -47,10 +47,101 @@ defmodule LLMAgent.Tool.Dispatcher do
   ```
   """
 
-  alias LLMAgent.{ToolAd, ToolQuery, Tool.Bindings, Tool.Policy, Tools.Discovery}
+  alias LLMAgent.{Events, ToolAd, ToolQuery, Tool.Bindings, Tool.Policy, Tools.Discovery}
 
   @type result :: term()
   @type opts :: keyword()
+
+  @pending_table :llmagent_pending_approvals
+
+  @doc """
+  Create the ETS table that tracks pending approvals. Called once at boot.
+  """
+  @spec init_approvals() :: :ok
+  def init_approvals do
+    if :ets.whereis(@pending_table) == :undefined do
+      :ets.new(@pending_table, [:set, :public, :named_table])
+    end
+
+    :ok
+  end
+
+  @doc """
+  Request human (or programmatic) approval before invoking a tool.
+
+  Emits a `tool.pending_approval` event carrying an opaque `id`, the resolved
+  ad's coordinate and kinds, and the proposed `action`/`args`. Blocks the
+  calling process until `approve/2` is called with the same id, or until
+  `:timeout` (default `:infinity`) elapses.
+
+  Returns `:allow`, `:deny`, or `{:error, :timeout | :not_found}`.
+
+  ## Options
+
+    * `:action` — string or atom describing the proposed action (default `nil`)
+    * `:args`   — map of arguments to surface to the approver (default `%{}`)
+    * `:timeout` — milliseconds to wait, or `:infinity` (default `:infinity`)
+  """
+  @spec request_approval(ToolAd.t() | String.t(), opts()) ::
+          :allow | :deny | {:error, :timeout | :not_found}
+  def request_approval(ad_or_coord, opts \\ []) do
+    init_approvals()
+    id = generate_id()
+    :ets.insert(@pending_table, {id, self()})
+
+    summary =
+      case resolve(ad_or_coord) do
+        {:ok, ad} -> %{coordinate: ad.coordinate, kinds: ad.kinds}
+        _ -> %{coordinate: inspect(ad_or_coord), kinds: []}
+      end
+
+    data =
+      summary
+      |> Map.put(:id, id)
+      |> Map.put(:action, opts |> Keyword.get(:action) |> stringify())
+      |> Map.put(:args, Keyword.get(opts, :args, %{}))
+
+    Events.emit(:pending_approval, "tool.pending_approval", data, __MODULE__)
+
+    timeout = Keyword.get(opts, :timeout, :infinity)
+
+    receive do
+      {:approval, ^id, decision} ->
+        :ets.delete(@pending_table, id)
+        decision
+    after
+      timeout ->
+        :ets.delete(@pending_table, id)
+        {:error, :timeout}
+    end
+  end
+
+  @doc """
+  Deliver an approval decision to the process awaiting `id`.
+
+  `decision` must be `:allow` or `:deny`. Returns `:ok` on delivery,
+  `{:error, :not_found}` if the id is unknown or already resolved.
+  """
+  @spec approve(String.t(), :allow | :deny) :: :ok | {:error, :not_found}
+  def approve(id, decision) when decision in [:allow, :deny] do
+    case :ets.lookup(@pending_table, id) do
+      [{^id, pid}] ->
+        send(pid, {:approval, id, decision})
+        :ok
+
+      [] ->
+        {:error, :not_found}
+    end
+  rescue
+    ArgumentError -> {:error, :not_found}
+  end
+
+  defp generate_id, do: "appr_" <> (:crypto.strong_rand_bytes(8) |> Base.url_encode64(padding: false))
+
+  defp stringify(nil), do: nil
+  defp stringify(a) when is_atom(a), do: Atom.to_string(a)
+  defp stringify(s) when is_binary(s), do: s
+  defp stringify(other), do: inspect(other)
 
   @doc """
   Query a tool without side effects.
@@ -140,6 +231,7 @@ defmodule LLMAgent.Tool.Dispatcher do
          policy = Keyword.get(opts, :policy, %Policy{}),
          action_str = action_to_string(action_or_role_or_spec),
          :ok <- Policy.decide(policy, ad, kind, action_str),
+         :ok <- maybe_request_approval(policy, ad, kind, action_str, args, opts),
          :ok <- check_kind(ad, kind),
          {:ok, adapter, payload} <- resolve_adapter(ad) do
       result = invoke(adapter, kind, payload, action_or_role_or_spec, args, opts)
@@ -159,6 +251,32 @@ defmodule LLMAgent.Tool.Dispatcher do
     else
       {:error, _} = err -> err
       {:error, _, _} = err -> err
+    end
+  end
+
+  defp maybe_request_approval(policy, ad, kind, action_str, args, opts) do
+    if Policy.requires_approval?(policy, ad, kind, action_str) do
+      approval_opts =
+        opts
+        |> Keyword.take([:approval_timeout])
+        |> Keyword.put(:action, action_str)
+        |> Keyword.put(:args, args)
+        |> rename_key(:approval_timeout, :timeout)
+
+      case request_approval(ad, approval_opts) do
+        :allow -> :ok
+        :deny -> {:error, :forbidden, :user_denied}
+        {:error, :timeout} -> {:error, :forbidden, :approval_timeout}
+      end
+    else
+      :ok
+    end
+  end
+
+  defp rename_key(kw, from, to) do
+    case Keyword.pop(kw, from) do
+      {nil, kw} -> kw
+      {v, kw} -> Keyword.put(kw, to, v)
     end
   end
 
