@@ -16,6 +16,8 @@ defmodule LLMAgent.Tools.Web do
   """
 
   @behaviour LLMAgent.Tool
+  @behaviour LLMAgent.Tool.Kinds.Query
+  @behaviour LLMAgent.Tool.Kinds.Action
   alias Comn.Errors.ErrorStruct
 
   @doc """
@@ -45,6 +47,60 @@ defmodule LLMAgent.Tools.Web do
     """
   end
 
+  @doc "Authoritative tool ad."
+  @spec ad() :: LLMAgent.ToolAd.t()
+  def ad do
+    LLMAgent.ToolAd.new(%{
+      id: "builtin.web",
+      coordinate: "function.http",
+      kinds: [:query, :action],
+      binding: {:module, __MODULE__},
+      operational: %{
+        actions: %{
+          "get"  => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "post" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
+        }
+      },
+      constraint: %{
+        idempotency: %{"get" => :idempotent, "post" => :non_idempotent},
+        blast_radius: %{"get" => :external, "post" => :external}
+      },
+      affordance: %{
+        declared: [%{
+          intent: "HTTP requests against arbitrary URLs",
+          suits: "fetching/posting JSON/text payloads",
+          avoid_when: "the target is on a local socket — use a more specific tool"
+        }],
+        learned: [],
+        open: false
+      },
+      fidelity: :authoritative,
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      lease: :permanent,
+      meta: %{}
+    })
+  end
+
+  @impl LLMAgent.Tool.Kinds.Query
+  def query("get", args) do
+    case perform("get", args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
+
+  def query(_, _), do: {:error, :unknown_action}
+
+  @impl LLMAgent.Tool.Kinds.Action
+  def act(action, args, _idempotency_key) when action in ["post"] do
+    case perform(action, args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
+
+  def act(_, _, _), do: {:error, :unknown_action}
+
   @doc ~S"""
   Perform an HTTP action.
 
@@ -72,7 +128,9 @@ defmodule LLMAgent.Tools.Web do
     Req.get(opts)
     |> normalize_response(url)
   rescue
-    e -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in Mint.TransportError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in Mint.HTTPError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in ArgumentError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
   end
 
   def perform("post", %{"url" => url} = args) do
@@ -82,7 +140,10 @@ defmodule LLMAgent.Tools.Web do
     Req.post(opts)
     |> normalize_response(url)
   rescue
-    e -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in Mint.TransportError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in Mint.HTTPError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in Jason.EncodeError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in ArgumentError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
   end
 
   def perform(_, _), do:
