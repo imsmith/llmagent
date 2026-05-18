@@ -1,6 +1,8 @@
 defmodule LLMAgent.Tools.File do
   @moduledoc "Provides file system operations like reading, writing, and deleting files."
   @behaviour LLMAgent.Tool
+  @behaviour LLMAgent.Tool.Kinds.Query
+  @behaviour LLMAgent.Tool.Kinds.Action
   alias Comn.Errors.ErrorStruct
 
   @doc """
@@ -15,6 +17,61 @@ defmodule LLMAgent.Tools.File do
   def describe do
     "Performs basic file operations (read/write/delete)."
   end
+
+  @doc "Authoritative tool ad."
+  @spec ad() :: LLMAgent.ToolAd.t()
+  def ad do
+    LLMAgent.ToolAd.new(%{
+      id: "builtin.file",
+      coordinate: "resource.fs.file",
+      kinds: [:query, :action],
+      binding: {:module, __MODULE__},
+      operational: %{
+        actions: %{
+          "read"   => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "write"  => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "delete" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
+        }
+      },
+      constraint: %{
+        idempotency: %{"read" => :idempotent, "write" => :non_idempotent, "delete" => :non_idempotent},
+        blast_radius: %{"read" => :local, "write" => :local, "delete" => :local}
+      },
+      affordance: %{
+        declared: [%{
+          intent: "read/write/delete files",
+          suits: "any file IO",
+          avoid_when: "the path is on a remote mount with high latency"
+        }],
+        learned: [],
+        open: false
+      },
+      fidelity: :authoritative,
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      lease: :permanent,
+      meta: %{}
+    })
+  end
+
+  @impl LLMAgent.Tool.Kinds.Query
+  def query("read", args) do
+    case perform("read", args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
+
+  def query(_, _), do: {:error, :unknown_action}
+
+  @impl LLMAgent.Tool.Kinds.Action
+  def act(action, args, _idempotency_key) when action in ["write", "delete"] do
+    case perform(action, args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
+
+  def act(_, _, _), do: {:error, :unknown_action}
 
   @doc """
   Perform a file action.
