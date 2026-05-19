@@ -12,6 +12,74 @@ defmodule LLMAgent.Tools.TupleSpaceTest do
     :ok
   end
 
+  describe "tool-discovery substrate (via Dispatcher)" do
+    alias LLMAgent.{Tools.TupleSpace, Tools.Discovery, Tool.Dispatcher, Tool.Policy}
+    alias LLMAgent.TupleSpace, as: TSCore
+
+    setup do
+      case Process.whereis(Discovery) do
+        nil -> {:ok, _} = Discovery.start_link(consume_announcements: false)
+        _ -> Discovery.reset!()
+      end
+
+      LLMAgent.Tool.Bindings.init_registry()
+      LLMAgent.Tool.Kinds.init_registry()
+      :ok = Discovery.register(TupleSpace.ad())
+
+      TSCore.stop_space(:default)
+      {:ok, _} = TSCore.start_space(:default)
+      :ok
+    end
+
+    test "ad/0 declares kinds with coordinate function.coordination.tuplespace" do
+      ad = TupleSpace.ad()
+      assert ad.coordinate == "function.coordination.tuplespace"
+      assert :query in ad.kinds
+      assert :action in ad.kinds
+    end
+
+    test "dispatcher.act/5 write then dispatcher.query/4 read_nowait round-trips a tuple" do
+      policy = %Policy{
+        allow: [
+          %{
+            coordinate: "function.coordination.tuplespace",
+            kinds: [:action, :query],
+            actions: :any
+          }
+        ],
+        fidelity_min: :authoritative
+      }
+
+      assert {:ok, _ack, _meta} =
+               Dispatcher.act(
+                 "function.coordination.tuplespace",
+                 "write",
+                 %{"space" => "default", "tuple" => ["t11", "hello"]},
+                 nil,
+                 policy: policy
+               )
+
+      # write is a cast — sync via blocking read before ETS peek
+      assert {:ok, _val, _meta} =
+               Dispatcher.query(
+                 "function.coordination.tuplespace",
+                 "read",
+                 %{"space" => "default", "pattern" => ["t11", "_"], "timeout" => 500},
+                 policy: policy
+               )
+
+      assert {:ok, val, _meta} =
+               Dispatcher.query(
+                 "function.coordination.tuplespace",
+                 "read_nowait",
+                 %{"space" => "default", "pattern" => ["t11", "_"]},
+                 policy: policy
+               )
+
+      assert val == ["t11", "hello"]
+    end
+  end
+
   describe "describe/0" do
     test "returns a string mentioning the actions" do
       desc = TS.describe()

@@ -8,8 +8,98 @@ defmodule LLMAgent.Tools.TupleSpace do
   """
 
   @behaviour LLMAgent.Tool
+  @behaviour LLMAgent.Tool.Kinds.Query
+  @behaviour LLMAgent.Tool.Kinds.Action
   alias LLMAgent.TupleSpace, as: TS
   alias Comn.Errors.ErrorStruct
+
+  @doc "Authoritative tool ad."
+  @impl true
+  @spec ad() :: LLMAgent.ToolAd.t()
+  def ad do
+    LLMAgent.ToolAd.new(%{
+      id: "builtin.tuplespace",
+      coordinate: "function.coordination.tuplespace",
+      kinds: [:query, :action],
+      binding: {:module, __MODULE__},
+      operational: %{
+        actions: %{
+          "read"          => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "read_nowait"   => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "list_spaces"   => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "write"         => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "take"          => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "take_nowait"   => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "create_space"  => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "destroy_space" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
+        }
+      },
+      constraint: %{
+        idempotency: %{
+          "read"          => :idempotent,
+          "read_nowait"   => :idempotent,
+          "list_spaces"   => :idempotent,
+          "write"         => :non_idempotent,
+          "take"          => :non_idempotent,
+          "take_nowait"   => :non_idempotent,
+          "create_space"  => :non_idempotent,
+          "destroy_space" => :non_idempotent
+        },
+        blast_radius: %{
+          "read"          => :local,
+          "read_nowait"   => :local,
+          "list_spaces"   => :local,
+          "write"         => :local,
+          "take"          => :local,
+          "take_nowait"   => :local,
+          "create_space"  => :local,
+          "destroy_space" => :local
+        }
+      },
+      affordance: %{
+        declared: [
+          %{
+            intent: "Linda-style coordination via shared tuples",
+            suits: "loosely-coupled multi-agent message passing",
+            avoid_when:
+              "you need ordered delivery or persistent state — use a real queue/db"
+          }
+        ],
+        learned: [],
+        open: false
+      },
+      fidelity: :authoritative,
+      provenance: %{
+        source: "llmagent.builtin",
+        produced_at: ~U[2026-05-18 00:00:00Z],
+        based_on: [],
+        signature: nil
+      },
+      lease: :permanent,
+      meta: %{}
+    })
+  end
+
+  @impl LLMAgent.Tool.Kinds.Query
+  def query(action, args) when action in ["read", "read_nowait", "list_spaces"] do
+    case perform(action, args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
+
+  def query(_, _), do: {:error, :unknown_action}
+
+  @impl LLMAgent.Tool.Kinds.Action
+  def act(action, args, _idempotency_key)
+      when action in ["write", "take", "take_nowait", "create_space", "destroy_space"] do
+    case perform(action, args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
+
+  def act(_, _, _), do: {:error, :unknown_action}
 
   @impl true
   def describe do
