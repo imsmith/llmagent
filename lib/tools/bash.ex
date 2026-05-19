@@ -14,7 +14,49 @@ defmodule LLMAgent.Tools.Bash do
   """
 
   @behaviour LLMAgent.Tool
+  @behaviour LLMAgent.Tool.Kinds.Action
   alias Comn.Errors.ErrorStruct
+
+  @doc "Authoritative tool ad."
+  @spec ad() :: LLMAgent.ToolAd.t()
+  def ad do
+    LLMAgent.ToolAd.new(%{
+      id: "builtin.bash",
+      coordinate: "function.shell.bash",
+      kinds: [:action],
+      binding: {:module, __MODULE__},
+      operational: %{
+        actions: %{"exec" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}}
+      },
+      constraint: %{
+        idempotency: %{"exec" => :non_idempotent},
+        blast_radius: %{"exec" => :system}
+      },
+      affordance: %{
+        declared: [%{
+          intent: "execute arbitrary shell commands on the host",
+          suits: "anything the agent might run from a terminal",
+          avoid_when: "a more specific tool (file, net, systemd, etc.) covers the use case"
+        }],
+        learned: [],
+        open: false
+      },
+      fidelity: :authoritative,
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      lease: :permanent,
+      meta: %{}
+    })
+  end
+
+  @impl LLMAgent.Tool.Kinds.Action
+  def act("exec", args, _idempotency_key) do
+    case perform("exec", args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
+
+  def act(_, _, _), do: {:error, :unknown_action}
 
   @doc """
   Returns a human-readable description of the Bash tool.
