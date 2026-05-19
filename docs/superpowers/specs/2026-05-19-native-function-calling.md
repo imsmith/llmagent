@@ -153,7 +153,7 @@ After dispatching the tool, the next request to the LLM appends:
 | **Concurrent calls + interleaved results** | Impossible. | Native via `tool_call_id` correlation. |
 | **What's in `content` when a tool is called** | The JSON of the call. Nothing else. | `null` (or optional narration). The structured call lives in a separate field. |
 | **Tool-result feedback to the model** | `role: "function"` with JSON-encoded payload — pre-2024 OpenAI dialect. | `role: "tool"` with `tool_call_id`. Current OpenAI dialect. |
-| **Where the catalog lives** | Implicit in prompt + parser code. Not derivable from the registry. | Generated from the registered ads on every request — the registry IS the catalog. |
+| **Where the offered toolset lives** | Implicit in prompt + parser code. Not derivable from the registry. | Generated per turn from the registry filtered by the agent's policy — the loadout. |
 | **What changes when a new tool is added** | A prompt-engineering update + parser test. Sometimes neither. | One line in `Tools.Builtins`; the catalog regenerates next turn. |
 | **What changes when an ad's affordance is updated** | Re-document the prompt. | Re-emit the ad. The next request's `tools` array reflects the change. |
 | **Verifiability against the spec** | Free-form. The model can claim to call `crypto.sha256` and the parser will believe it without checking the substrate. | The function-name in the response MUST be one the client offered. Mismatch is a parse error. |
@@ -180,13 +180,34 @@ The substrate built in 2026-05-18 already has every piece needed to generate the
 - `affordance.declared` has the intent hints — these become the `function.description`.
 - `constraint.idempotency` and `constraint.blast_radius` can drive `tool_choice` strategy.
 
-The catalog regeneration ("§7.6 step 9" in the substrate spec) becomes a function of the registry, not a hardcoded blob.
+The loadout (the substrate spec's §7.6-step-9 catalog regeneration, now made concrete) becomes a function of `(registry, policy)`, not a hardcoded blob.
 
-## §5 — What this requires changing
+## §5 — Persona, policy, and the loadout
+
+Before listing deltas, one structural correction the first draft of this spec missed. Separating the catalog from the system prompt forces an explicit chain that has been implicit until now:
+
+```text
+role  ─────►  persona prompt        (who the agent is — narrative)
+role  ─────►  %Policy{}             (what the agent is allowed to do — structural)
+%Policy{} + Tools.Discovery ─────►  loadout (the tools offered TO the agent this turn)
+loadout  ─────►  request.tools[]    (the structured offer the model sees)
+model emits tool_calls
+Tool.Dispatcher.<kind>/4 + same %Policy{} re-checks ─────► dispatch
+```
+
+Three observations follow:
+
+**Policy gates both the offer and the dispatch.** Today `Tool.Dispatcher` consults `%Policy{}` only at dispatch time — the trust choke point that catches a misbehaving model. With native function-calling, the same policy must also gate the *offer*: the `tools[]` array we put in the request body. Otherwise we'd describe tools to the model the agent can't actually invoke, wasting context tokens and confusing the small model that just got told it could do something it can't. The offer-time check is for clarity; the dispatch-time check is for safety. Both run; neither is sufficient alone.
+
+**Persona is just persona.** The `RolePrompt` table becomes responsible for *narrative* only — voice, register, domain framing. It stops carrying any list of tool names, formats, or examples. The role does still pick the policy (`:default` → permissive policy; `:sysadmin` → policy that allows system tools; future `:researcher` → only `resource.*` + `function.http`). The role-to-policy mapping is one explicit table; the persona-to-prompt mapping is a separate explicit table. Roles compose: a `:sysadmin` persona with a `:sandboxed` policy override is a coherent thing to ask for.
+
+**The substrate registry is the affordance space; the loadout is the equipped subset.** `Tools.Discovery` carries every ad — native modules, mDNS-discovered llama-servers, MCP-imported tools, future trained ads — without prejudice about their binding kind. The loadout is what *this* agent in *this* engagement carries from that space, determined by the agent's policy at loadout-generation time. This is the same affordance-vs-actor distinction the broader vision rests on: the world affords X, but only some subset of X is meaningful or legible to a given actor in a given situation. The loadout is that subset, made concrete.
+
+## §6 — What this requires changing
 
 These are the deltas, not an implementation plan. A separate plan turns each into ordered tasks with tests.
 
-### 5.1 — `LLMClient` behaviour gains a `tools` opt
+### 6.1 — `LLMClient` behaviour gains a `tools` opt
 
 ```elixir
 @callback chat(messages :: [map()], opts :: map()) :: {:ok, content :: String.t() | nil, tool_calls :: [map()]} | {:error, term()}
@@ -196,62 +217,77 @@ The return shape changes from `{:ok, content}` to `{:ok, content, tool_calls}`. 
 
 `LLMClient.OpenAI.chat/2` accepts a `:tools` key in `opts` and passes it through to the request body. When present and non-empty, the response is parsed for `tool_calls`; when absent, behaviour is identical to today.
 
-### 5.2 — A new module derives the `tools` array from the registry
+### 6.2 — A new `LLMAgent.Loadout` module derives the offer from the registry + policy
 
 ```elixir
-LLMAgent.ToolCatalog.for(allowed_tools_policy :: %Policy{}) :: [map()]
+LLMAgent.Loadout.for(%Policy{}) :: [openai_tool_descriptor]
 ```
 
-Walks `Tools.Discovery`, filters by the agent's policy, projects each ad into the OpenAI tool-schema shape. One function-entry per `(coordinate, action)` pair the agent is allowed to call. Function names use the substrate's coordinate-plus-action convention — e.g., `crypto.sha256`, `bash.exec`, `file.read` — with a stable mapping back to `(coordinate, kind, action)` for dispatch.
+The loadout module is the offer-time policy enforcement point. It:
 
-This is §7.6-step-9 of the substrate spec, made concrete.
+1. Walks `Tools.Discovery` and collects every ad — regardless of binding kind. A native `:module`-bound ad, an mDNS `:openai_chat`-bound llama-server, and a future `:mcp`-bound imported tool all flow through the same path. The binding kind is the dispatcher's concern, not the loadout's.
+2. Filters the ad list through `%Policy{}` — the same struct the dispatcher uses, the same `decide/4` rules — applied at offer time. Ads whose `(coordinate, kind, action)` triple isn't allowed by the policy are dropped before the model ever sees them.
+3. Projects each surviving `(coordinate, kind, action)` triple into one OpenAI `tools[]` entry: function name from the coordinate-plus-action convention (`crypto.sha256`, `bash.exec`), description from `affordance.declared[].intent`, parameters from `operational.actions[name].inputs`.
+4. Returns the array AND a lookup table from `function.name` back to `(coordinate, kind, action)` so the agent loop can route `tool_calls` to the dispatcher without re-resolving.
 
-### 5.3 — Agent loop consumes `tool_calls` instead of parsing `content` as JSON
+`Loadout.for/1` is pure — no side effects, deterministic in `(registry snapshot, policy)`. It can be cached per-policy and invalidated on discovery events. This is §7.6-step-9 of the substrate spec, made concrete.
 
-`LLMAgent.handle_info({ref, {:ok, content}})` becomes `handle_info({ref, {:ok, content, tool_calls}})`. If `tool_calls != []`, each one is resolved (function-name → (coordinate, kind, action) lookup), dispatched through `Tool.Dispatcher` with the existing policy, and its result is fed back as a `role: "tool"` message with the matching `tool_call_id`. If `tool_calls == []`, behaviour matches today (assistant message, loop terminates unless parent-coordinated).
+### 6.3 — MCP-imported tools become first-class ads
+
+The current MCP client (`lib/llmagent/mcp/`) predates the substrate and registers imported tools in the legacy `LLMAgent.Tools` persistent_term registry, not as `%ToolAd{}` records. This is the integration debt that the first draft of this spec wanted to punt and shouldn't.
+
+`LLMAgent.MCP.Connection`'s tool-discovery step (the `tools/list` MCP request) emits one `%ToolAd{}` per discovered tool, registered in `Tools.Discovery` with binding `{:mcp, {server_ref, tool_name}}`. Each MCP tool's JSON-schema parameters land in `operational.actions[name].inputs` directly — MCP and OpenAI function-calling both use JSON-Schema, so the conversion is structural. The `:mcp` binding adapter (already declared in `Tool.Bindings`) routes dispatcher calls through the existing connection.
+
+Once MCP tools are ads, the loadout walks one registry and the model gets a unified `tools[]` array containing native + MCP + (eventually) trained tools, all enforced by one policy. The legacy `LLMAgent.Tools.register/2` path for MCP stays alive during the transition under the §7.10-subtraction umbrella.
+
+### 6.4 — Agent loop consumes `tool_calls` instead of parsing `content` as JSON
+
+`LLMAgent.handle_info({ref, {:ok, content}})` becomes `handle_info({ref, {:ok, content, tool_calls}})`. For each entry in `tool_calls`, the function name is resolved via the Loadout lookup table to `(coordinate, kind, action)`, dispatched through `Tool.Dispatcher` with the agent's policy, and its result is fed back as a `role: "tool"` message with the matching `tool_call_id`. If `tool_calls == []`, behaviour matches today (assistant message, loop terminates unless parent-coordinated).
 
 The legacy `parse_tool_call/1` stays as a fallback for one transition cycle: if `content` is JSON-decodable AND has `tool`/`action`/`args` AND `tool_calls` is empty, treat it as legacy. This handles models without native function-calling support during migration.
 
-### 5.4 — Tool-result feedback uses `role: "tool"` + `tool_call_id`
+### 6.5 — Tool-result feedback uses `role: "tool"` + `tool_call_id`
 
 `format_tool_result/1` emits `%{role: "tool", tool_call_id: id, content: <result>}` instead of `%{role: "function", content: <result>}`. The legacy `function` role stays accepted on the input side for older saved histories, but is no longer emitted.
 
-### 5.5 — System prompt is no longer the catalog
+### 6.6 — Persona prompts shrink; role-to-policy mapping becomes explicit
 
-`RolePrompt.get/1` keeps the role-specific narrative ("You are a helpful assistant" / "You are a Linux systems administrator") but no longer needs to enumerate tools, formats, or examples. The tools field carries that information structurally.
+`RolePrompt.get/1` keeps the persona narrative and stops carrying any tool catalog, format examples, or invocation instructions. A new role-to-policy table — `LLMAgent.RolePolicy.for/1` or similar — maps `:default` / `:sysadmin` / future roles to the default `%Policy{}` for that role. The agent's `start_link/1` keeps accepting a `policy:` opt that overrides or narrows the role's default policy (per §6.3 of the substrate spec, narrowing only — agents cannot broaden beyond their role's default).
 
-### 5.6 — The legacy adapter for non-conforming endpoints
+### 6.7 — Capability negotiation on the binding ad
 
-Not every OpenAI-compatible endpoint supports `tools` (older llama.cpp builds, certain ollama versions, ad-hoc mocks). The `LLMClient` behaviour gains a capability negotiation: the binding ad declares whether it supports native function-calling, and `ToolCatalog.for/1` is bypassed for endpoints that don't. This is also where the discovery substrate pays off — the binding ad can carry `{:capability, :tools}` and the agent picks an endpoint that supports the feature, falling back to the legacy-JSON path otherwise.
+Not every OpenAI-compatible endpoint supports the `tools` field (older llama.cpp builds, certain ollama versions, ad-hoc mocks). The binding ad's `meta` map carries a `capabilities` field — `%{capabilities: [:tools, :streaming]}` or similar — and the `LLMClient.OpenAI.chat/2` path checks it before sending `tools[]`. Endpoints that don't support `tools` fall back to the legacy custom-JSON path with the loadout serialised into the system prompt. This is the substrate paying off: the agent can route a model-aware call to a model that supports the feature.
 
-## §6 — What's deliberately out of scope here
+## §7 — What's deliberately out of scope here
 
 These are real but separable:
 
-1. **Per-tool action schemas.** Right now every `operational.actions[name].inputs` is `%{}` (empty). The catalog needs real schemas to be useful. Filling them in is a per-tool sweep — its own plan.
+1. **Per-tool action schemas.** Right now every `operational.actions[name].inputs` is `%{}` (empty). The loadout needs real schemas to be useful. Filling them in is a per-tool sweep — its own plan.
 2. **Streaming tool calls.** OpenAI's streaming API emits `tool_calls` in delta chunks. Not needed for v1.
 3. **Parallel tool dispatch.** The substrate can handle concurrent calls (Dispatcher is per-call). Wiring the agent loop to fan out `tool_calls.length > 1` simultaneously instead of serially is a follow-on.
-4. **Catalog filtering by affordance.** `affordance.declared` could be used to rank or omit tools per-prompt (e.g., "this looks like a network task, only expose `function.http` and `resource.network`"). That's affordance-discovery territory — the trained-ad lifecycle work.
-5. **MCP-imported tools.** The current MCP client predates the substrate. Folding MCP tools into the same catalog is a separate (smaller) integration.
+4. **Loadout filtering by affordance match.** `affordance.declared` could be used to rank or omit tools per-prompt (e.g., "this looks like a network task, only expose `function.http` and `resource.network`"). That's affordance-discovery territory — the trained-ad lifecycle work.
+5. **Cross-role policy composition.** A `:sysadmin` agent inside a `:sandboxed` envelope. Intersect/narrow exists in `Policy.intersect/2`; making it a first-class agent-start opt is a small follow-on.
 
-## §7 — Open questions
+## §8 — Open questions
 
 - **Function-name convention.** `"crypto.sha256"` (dot-separated coordinate+action) is the obvious choice. Some models may handle `"crypto_sha256"` better. Empirical question — try both with gemma-26B + mistral-7B.
 - **`tool_choice` policy.** OpenAI accepts `"auto"`, `"none"`, `"required"`, or `{type: "function", function: {name: ...}}`. Default `"auto"` is right for v1; later the policy could promote `"required"` for jobs flagged as tool-mandatory.
 - **Backwards compatibility window.** How long does the legacy custom-JSON path stay alive? Suggest: one minor version. Anything saved in DurableLog under the old shape gets a one-time migration on load.
 - **Llama.cpp version requirements.** Grammar-constrained tool-calling needs `llama-server` from ~mid-2024. Skynet001/002 are running recent enough builds (per the TXT records seen by avahi). For older deployments, the legacy-JSON fallback is the answer; capability negotiation handles it.
 - **Tests against the real LAN llamas.** T17 was hand-driven. A `@tag :integration` end-to-end test pointed at skynet001 (when reachable) would catch regressions in this path. Belongs in the implementation plan.
+- **Loadout caching invalidation.** `Loadout.for/1` is pure but recomputing on every turn is wasteful. Cache key is `(policy, registry version)`. Discovery emits events on add/update/remove; the cache subscribes. Open question: do we want a per-agent cache or a process-global one?
 
-## §8 — What this commits to
+## §9 — What this commits to
 
 1. The model is told what tools exist via the structured `tools` field, not via prose in the system prompt.
 2. The model emits tool calls in a structured response field that cannot be wrapped in chat formatting.
 3. The agent loop reads `tool_calls`, not `content`-as-JSON. Legacy custom-JSON is a deprecation-bound fallback.
-4. The catalog is derived from the substrate registry, not hand-maintained.
-5. The substrate's binding ads carry capability flags; the agent chooses endpoints that support what it needs.
+4. The loadout is derived from the substrate registry filtered by the agent's policy. Persona, policy, and loadout are three explicit concepts with three explicit tables.
+5. Native, mDNS-discovered, MCP-imported, and (future) trained ads are all on the same conceptual footing in the registry. The loadout doesn't care about binding kind.
+6. The substrate's binding ads carry capability flags; the agent chooses endpoints that support what it needs.
 
-The structural improvement is moving the contract between agent and model **out of natural language and into protocol**. Everything downstream of this — multi-llama routing, the Bayesian-chain agent loop, the trained-ad commons — depends on small models being able to do tool-use reliably, and reliable tool-use depends on structural enforcement that the current free-form-JSON contract does not provide.
+The structural improvement is moving the contract between agent and model **out of natural language and into protocol**, and making the persona/policy/loadout chain that connects role identity to equipped capability explicit. Everything downstream of this — multi-llama routing, the Bayesian-chain agent loop, the trained-ad commons — depends on small models being able to do tool-use reliably, and reliable tool-use depends on structural enforcement that the current free-form-JSON contract does not provide.
 
 ## Follow-on plan
 
-To be written as `docs/superpowers/plans/<YYYY-MM-DD>-native-function-calling.md` after brainstorming this spec. Tasks will sequence: (a) per-tool action schemas, (b) `ToolCatalog` module + tests, (c) `LLMClient` behaviour extension + OpenAI adapter, (d) agent loop refactor to consume `tool_calls`, (e) `role: "tool"` continuation messages, (f) capability negotiation on the binding ad, (g) integration test against a LAN llama-server. Legacy custom-JSON path stays alive throughout; subtraction is its own task at the end.
+To be written as `docs/superpowers/plans/<YYYY-MM-DD>-native-function-calling.md` after brainstorming this spec. Tasks will sequence: (a) per-tool action schemas, (b) MCP-tools-as-ads conversion, (c) `LLMAgent.Loadout` module + tests, (d) role-to-policy mapping table, (e) `LLMClient` behaviour extension + OpenAI adapter, (f) agent loop refactor to consume `tool_calls`, (g) `role: "tool"` continuation messages, (h) capability negotiation on the binding ad, (i) integration test against a LAN llama-server. Legacy custom-JSON path stays alive throughout; subtraction is its own task at the end.
