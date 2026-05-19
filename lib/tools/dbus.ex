@@ -9,6 +9,8 @@ defmodule LLMAgent.Tools.DBus do
   """
 
   @behaviour LLMAgent.Tool
+  @behaviour LLMAgent.Tool.Kinds.Query
+  @behaviour LLMAgent.Tool.Kinds.Action
   alias Comn.Errors.ErrorStruct
 
   @doc """
@@ -30,6 +32,69 @@ defmodule LLMAgent.Tools.DBus do
       - call: invokes a method on a D-Bus interface
     """
   end
+
+  @doc "Authoritative tool ad."
+  @spec ad() :: LLMAgent.ToolAd.t()
+  def ad do
+    LLMAgent.ToolAd.new(%{
+      id: "builtin.dbus",
+      coordinate: "function.dbus",
+      kinds: [:query, :action],
+      binding: {:module, __MODULE__},
+      operational: %{
+        actions: %{
+          "list"       => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "introspect" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "call"       => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
+        }
+      },
+      constraint: %{
+        idempotency: %{
+          "list"       => :idempotent,
+          "introspect" => :idempotent,
+          "call"       => :non_idempotent
+        },
+        blast_radius: %{
+          "list"       => :system,
+          "introspect" => :system,
+          "call"       => :system
+        }
+      },
+      affordance: %{
+        declared: [%{
+          intent: "interact with services over D-Bus",
+          suits: "Linux desktop and system service inspection",
+          avoid_when: "the host has no DBus daemon running"
+        }],
+        learned: [],
+        open: false
+      },
+      fidelity: :authoritative,
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      lease: :permanent,
+      meta: %{}
+    })
+  end
+
+  @impl LLMAgent.Tool.Kinds.Query
+  def query(action, args) when action in ["list", "introspect"] do
+    case perform(action, args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
+
+  def query(_, _), do: {:error, :unknown_action}
+
+  @impl LLMAgent.Tool.Kinds.Action
+  def act("call", args, _idempotency_key) do
+    case perform("call", args) do
+      {:ok, %{output: out, metadata: meta}} -> {:ok, out, meta}
+      {:error, _} = err -> err
+    end
+  end
+
+  def act(_, _, _), do: {:error, :unknown_action}
 
   @doc ~S"""
   Perform a D-Bus action.
