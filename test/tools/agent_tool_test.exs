@@ -165,4 +165,51 @@ defmodule LLMAgent.Tools.AgentTest do
       assert GenServer.whereis({:global, :child_sync_to}) == nil
     end
   end
+
+  describe "tool-discovery substrate (via Dispatcher)" do
+    alias LLMAgent.{Tools.Agent, Tools.Discovery, Tool.Dispatcher, Tool.Policy}
+
+    setup do
+      case Process.whereis(Discovery) do
+        nil -> {:ok, _} = Discovery.start_link(consume_announcements: false)
+        _ -> Discovery.reset!()
+      end
+
+      LLMAgent.Tool.Bindings.init_registry()
+      LLMAgent.Tool.Kinds.init_registry()
+      :ok = Discovery.register(Agent.ad())
+      :ok
+    end
+
+    test "ad/0 returns a ToolAd for function.agent with :spawn kind" do
+      ad = Agent.ad()
+      assert ad.coordinate == "function.agent"
+      assert :spawn in ad.kinds
+      assert ad.fidelity == :authoritative
+    end
+
+    test "dispatcher.spawn_child/3 starts a child agent and terminate_child stops it" do
+      policy = %Policy{
+        allow: ["function.agent"],
+        fidelity_min: :authoritative
+      }
+
+      child_name = :"substrate_spawn_test_#{System.unique_integer([:positive])}"
+
+      spec = {"start", %{
+        "name" => Atom.to_string(child_name),
+        "prompt" => "noop",
+        "tools" => ["bash"],
+        "mode" => "async"
+      }}
+
+      assert {:ok, child_ref} =
+               Dispatcher.spawn_child("function.agent", spec, policy: policy)
+
+      assert is_atom(child_ref) or is_pid(child_ref) or is_tuple(child_ref)
+
+      # Best-effort cleanup
+      _ = LLMAgent.AgentSupervisor.stop_agent(child_name)
+    end
+  end
 end

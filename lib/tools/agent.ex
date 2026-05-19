@@ -10,13 +10,14 @@ defmodule LLMAgent.Tools.Agent do
   """
 
   @behaviour LLMAgent.Tool
+  @behaviour LLMAgent.Tool.Kinds.SpawnKind
   alias LLMAgent.AgentSupervisor
   alias Comn.Errors.ErrorStruct
   alias Comn.Contexts
 
   @default_sync_timeout 120_000
 
-  @impl true
+  @impl LLMAgent.Tool
   def describe do
     """
     Spawn and manage child agents. One level deep — children cannot spawn further.
@@ -33,7 +34,75 @@ defmodule LLMAgent.Tools.Agent do
     """
   end
 
-  @impl true
+  @doc "Authoritative tool ad."
+  @spec ad() :: LLMAgent.ToolAd.t()
+  def ad do
+    LLMAgent.ToolAd.new(%{
+      id: "builtin.agent",
+      coordinate: "function.agent",
+      kinds: [:spawn],
+      binding: {:module, __MODULE__},
+      operational: %{
+        actions: %{
+          "start"  => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "stop"   => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "status" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
+        }
+      },
+      constraint: %{
+        idempotency: %{"start" => :unknown, "stop" => :unknown, "status" => :idempotent},
+        blast_radius: %{"start" => :system, "stop" => :system, "status" => :local}
+      },
+      affordance: %{
+        declared: [%{
+          intent: "spawn, monitor, and terminate sub-agents",
+          suits: "decomposing work into sub-agents that report back via the tuple space",
+          avoid_when: "the work is a single tool call — overhead isn't worth it"
+        }],
+        learned: [],
+        open: false
+      },
+      fidelity: :authoritative,
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      lease: :permanent,
+      meta: %{}
+    })
+  end
+
+  @impl LLMAgent.Tool.Kinds.SpawnKind
+  def spawn_child({"start", args}, _opts) do
+    name_str = Map.get(args, "name", "")
+    name_atom = String.to_atom(name_str)
+
+    case perform("spawn", args) do
+      {:ok, _} -> {:ok, name_atom}
+      {:error, _} = err -> err
+    end
+  end
+
+  def spawn_child(_, _), do: {:error, :unknown_spec}
+
+  @impl LLMAgent.Tool.Kinds.SpawnKind
+  def child_status(child_ref) do
+    name_str = if is_atom(child_ref), do: Atom.to_string(child_ref), else: to_string(child_ref)
+
+    case perform("status", %{"name" => name_str}) do
+      {:ok, %{output: status}} -> status
+      {:error, _} = err -> err
+    end
+  end
+
+  @impl LLMAgent.Tool.Kinds.SpawnKind
+  def terminate_child(child_ref, _reason) do
+    name_str = if is_atom(child_ref), do: Atom.to_string(child_ref), else: to_string(child_ref)
+
+    case perform("kill", %{"name" => name_str}) do
+      {:ok, _} -> :ok
+      {:error, _} = err -> err
+    end
+  end
+
+  @impl LLMAgent.Tool
   def perform("spawn", args), do: do_spawn(args)
 
   def perform("kill", %{"name" => name}) when is_binary(name) do
