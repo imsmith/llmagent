@@ -41,6 +41,7 @@ defmodule LLMAgent.Application do
       &LLMAgent.Discovery.AdapterSupervisor.start_adapter/1
     )
 
+    LLMAgent.Tools.Builtins.register_all()
     LLMAgent.AgentSupervisor.start_agent(agent_opts)
     LLMAgent.TupleSpace.start_space(:default)
     {:ok, sup}
