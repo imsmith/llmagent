@@ -1,6 +1,6 @@
 defmodule LLMAgent.Tools.UdevTest do
   @moduledoc false
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias LLMAgent.Tools.Udev
   alias Comn.Errors.ErrorStruct

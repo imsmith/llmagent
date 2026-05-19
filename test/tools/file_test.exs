@@ -1,6 +1,6 @@
 defmodule LLMAgent.Tools.FileTest do
   @moduledoc false
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias LLMAgent.Tools.File, as: FileTool
   alias Comn.Errors.ErrorStruct

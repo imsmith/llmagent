@@ -1,6 +1,6 @@
 defmodule LLMAgent.Tools.NetTest do
   @moduledoc false
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias LLMAgent.Tools.Net
   alias Comn.Errors.ErrorStruct

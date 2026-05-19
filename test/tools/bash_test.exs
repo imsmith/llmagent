@@ -1,6 +1,6 @@
 defmodule LLMAgent.Tools.BashTest do
   @moduledoc false
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias LLMAgent.Tools.Bash
   alias Comn.Errors.ErrorStruct

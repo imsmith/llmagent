@@ -1,6 +1,6 @@
 defmodule LLMAgent.Tools.DbusTest do
   @moduledoc false
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias LLMAgent.Tools.DBus
   alias Comn.Errors.ErrorStruct

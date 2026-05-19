@@ -1,6 +1,6 @@
 defmodule LLMAgent.Tools.ProcTest do
   @moduledoc false
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias LLMAgent.Tools.Proc
   alias Comn.Errors.ErrorStruct

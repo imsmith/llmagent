@@ -1,7 +1,7 @@
 defmodule LLMAgent.Tools.CryptoTest do
   @moduledoc false
 
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias LLMAgent.Tools.Crypto
   alias Comn.Errors.ErrorStruct

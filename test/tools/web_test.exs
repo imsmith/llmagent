@@ -1,6 +1,6 @@
 defmodule LLMAgent.Tools.WebTest do
   @moduledoc false
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   alias LLMAgent.Tools.Web
   alias Comn.Errors.ErrorStruct
 
