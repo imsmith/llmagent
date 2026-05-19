@@ -70,7 +70,7 @@ defmodule LLMAgent.Tools.Agent do
   end
 
   @impl LLMAgent.Tool.Kinds.SpawnKind
-  def spawn_child({"start", args}, _opts) do
+  def spawn_child({action, args}, _opts) when action in ["start", "spawn"] do
     name_str = Map.get(args, "name", "")
     name_atom = String.to_atom(name_str)
 

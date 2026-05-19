@@ -1,15 +1,38 @@
 defmodule LLMAgent do
+  @moduledoc """
+  Top-level agent GenServer. Manages conversation history, dispatches tool
+  calls through `Tool.Dispatcher`, and drives the prompt/response loop.
+  """
+
   use GenServer
   require Logger
 
   alias LLMAgent.RolePrompt
-  alias LLMAgent.Tools
   alias LLMAgent.Events
+  alias LLMAgent.Tool.{Dispatcher, Policy}
+  alias LLMAgent.Tools
   alias Comn.Errors.ErrorStruct
   alias Comn.Contexts
 
   @default_model "gpt-4"
   @default_api_host "http://localhost:11434/v1"
+
+  # Map legacy tool atom names to their substrate coordinates. Stays here
+  # until §7.6 step 9 (LLM-facing catalog regeneration), then is removed.
+  @legacy_coordinate %{
+    bash:        {"function.shell.bash",              :action},
+    web:         {"function.http",                    nil},
+    dbus:        {"function.dbus",                    nil},
+    systemd:     {"function.systemd",                 nil},
+    inotify:     {"resource.fs.events",               :stream},
+    udev:        {"resource.hardware.events",          nil},
+    file:        {"resource.fs.file",                 nil},
+    net:         {"resource.network",                 :query},
+    proc:        {"resource.proc",                    :query},
+    crypto:      {"function.crypto",                  :compute},
+    tuple_space: {"function.coordination.tuplespace", nil},
+    agent:       {"function.agent",                   :spawn}
+  }
 
   ## Public API
 
@@ -219,7 +242,7 @@ defmodule LLMAgent do
 
     result =
       if tool_allowed?(tool, allowed) do
-        dispatch_tool(tool, action, args)
+        dispatch_tool(tool, action, args, allowed)
       else
         {:error,
          ErrorStruct.new("tool_not_permitted", "tool",
@@ -246,7 +269,28 @@ defmodule LLMAgent do
   defp tool_allowed?(_tool, :all), do: true
   defp tool_allowed?(tool, allowed) when is_list(allowed), do: tool in allowed
 
-  defp dispatch_tool(tool, action, args) do
+  defp dispatch_tool(tool, action, args, allowed_tools) do
+    case Map.fetch(@legacy_coordinate, tool) do
+      {:ok, {coordinate, fixed_kind}} ->
+        policy = Policy.from_legacy_or_struct(allowed_tools_to_policy(allowed_tools))
+        kind = fixed_kind || infer_kind(coordinate, action)
+
+        case invoke_via_dispatcher(kind, coordinate, action, args, policy) do
+          {:error, %ErrorStruct{reason: "dispatch_failed"}} ->
+            # Discovery returned :not_found — fall back to legacy Tools registry.
+            # Stays until §7.6 step 9 removes the legacy path.
+            legacy_dispatch(tool, action, args)
+
+          other ->
+            other
+        end
+
+      :error ->
+        {:error, ErrorStruct.new("invalid_tool", "tool", "Tool #{tool} not found")}
+    end
+  end
+
+  defp legacy_dispatch(tool, action, args) do
     case Tools.get(tool) do
       {:ok, tool_module} ->
         tool_module.perform(action, args)
@@ -255,6 +299,102 @@ defmodule LLMAgent do
         {:error, ErrorStruct.new("invalid_tool", "tool", "Tool #{tool} not found")}
     end
   end
+
+  defp allowed_tools_to_policy(:all) do
+    %Policy{
+      allow: ["function.*", "resource.*", "legacy.*"],
+      fidelity_min: :authoritative
+    }
+  end
+
+  defp allowed_tools_to_policy(list) when is_list(list) do
+    coordinates =
+      Enum.map(list, fn name ->
+        case Map.fetch(@legacy_coordinate, name) do
+          {:ok, {coord, _}} -> coord
+          :error -> "legacy.#{name}"
+        end
+      end)
+
+    %Policy{
+      allow: Enum.map(coordinates, &%{coordinate: &1, kinds: :any, actions: :any}),
+      fidelity_min: :authoritative
+    }
+  end
+
+  defp infer_kind(coordinate, action) do
+    alias LLMAgent.{ToolQuery, Tools.Discovery}
+
+    case Discovery.find_one(ToolQuery.new(%{coordinate: coordinate})) do
+      {:ok, ad} ->
+        cond do
+          :query in ad.kinds and get_in(ad.constraint, [:idempotency, action]) == :idempotent ->
+            :query
+
+          :action in ad.kinds ->
+            :action
+
+          true ->
+            hd(ad.kinds)
+        end
+
+      _ ->
+        :action
+    end
+  end
+
+  defp invoke_via_dispatcher(:query, coord, action, args, policy) do
+    case Dispatcher.query(coord, action, args, policy: policy) do
+      {:ok, out, meta} -> {:ok, %{output: out, metadata: meta}}
+      err -> normalize_dispatcher_error(err)
+    end
+  end
+
+  defp invoke_via_dispatcher(:action, coord, action, args, policy) do
+    case Dispatcher.act(coord, action, args, nil, policy: policy) do
+      {:ok, ack, meta} -> {:ok, %{output: ack, metadata: meta}}
+      err -> normalize_dispatcher_error(err)
+    end
+  end
+
+  defp invoke_via_dispatcher(:compute, coord, action, args, policy) do
+    case Dispatcher.compute(coord, action, args, policy: policy) do
+      {:ok, value} -> {:ok, %{output: value, metadata: %{}}}
+      {:ok, value, meta} -> {:ok, %{output: value, metadata: meta}}
+      err -> normalize_dispatcher_error(err)
+    end
+  end
+
+  defp invoke_via_dispatcher(:stream, _coord, _action, _args, _policy) do
+    {:error,
+     ErrorStruct.new(
+       "stream_via_loop",
+       "kind",
+       "stream tools cannot be invoked through the prompt/response loop; use Dispatcher.subscribe/5 directly"
+     )}
+  end
+
+  defp invoke_via_dispatcher(:spawn, coord, action, args, policy) do
+    case Dispatcher.spawn_child(coord, {action, args}, policy: policy) do
+      {:ok, child_ref} -> {:ok, %{output: child_ref, metadata: %{}}}
+      err -> normalize_dispatcher_error(err)
+    end
+  end
+
+  defp normalize_dispatcher_error({:error, :forbidden, reason}),
+    do:
+      {:error,
+       ErrorStruct.new(
+         "forbidden",
+         "policy",
+         "Policy denied: #{reason}",
+         "Update allowed_tools or the agent's policy"
+       )}
+
+  defp normalize_dispatcher_error({:error, %ErrorStruct{} = e}), do: {:error, e}
+
+  defp normalize_dispatcher_error({:error, reason}),
+    do: {:error, ErrorStruct.new("dispatch_failed", "tool", inspect(reason))}
 
   ## Helpers
 

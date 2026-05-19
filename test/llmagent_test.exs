@@ -1,4 +1,5 @@
 defmodule LLMAgentTest do
+  @moduledoc false
   use ExUnit.Case, async: false
 
   alias LLMAgent.EventLog
