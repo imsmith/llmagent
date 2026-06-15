@@ -18,6 +18,7 @@ defmodule LLMAgent.Tools.Bash do
   alias Comn.Errors.ErrorStruct
 
   @doc "Authoritative tool ad."
+  @impl LLMAgent.Tool
   @spec ad() :: LLMAgent.ToolAd.t()
   def ad do
     LLMAgent.ToolAd.new(%{

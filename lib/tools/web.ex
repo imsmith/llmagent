@@ -48,6 +48,7 @@ defmodule LLMAgent.Tools.Web do
   end
 
   @doc "Authoritative tool ad."
+  @impl LLMAgent.Tool
   @spec ad() :: LLMAgent.ToolAd.t()
   def ad do
     LLMAgent.ToolAd.new(%{

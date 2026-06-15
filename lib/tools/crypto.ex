@@ -20,6 +20,7 @@ defmodule LLMAgent.Tools.Crypto do
   @doc """
   Authoritative tool ad. Registered at boot by `LLMAgent.Tools.Builtins`.
   """
+  @impl LLMAgent.Tool
   @spec ad() :: LLMAgent.ToolAd.t()
   def ad do
     actions = ~w(sha256 hmac generate_key generate_keypair sign verify)

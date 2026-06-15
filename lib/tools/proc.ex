@@ -89,6 +89,7 @@ defmodule LLMAgent.Tools.Proc do
     do: {:error, ErrorStruct.new("unknown_command", nil, "Unrecognized Proc action")}
 
   @doc "Authoritative tool ad."
+  @impl LLMAgent.Tool
   @spec ad() :: LLMAgent.ToolAd.t()
   def ad do
     actions = ~w(list info)

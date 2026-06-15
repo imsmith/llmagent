@@ -17,6 +17,7 @@ defmodule LLMAgent.Tools.Inotify do
   alias LLMAgent.Tools.Inotify.Watcher
 
   @doc "Authoritative tool ad."
+  @impl LLMAgent.Tool
   @spec ad() :: LLMAgent.ToolAd.t()
   def ad do
     LLMAgent.ToolAd.new(%{
