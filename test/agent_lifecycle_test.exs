@@ -74,6 +74,28 @@ defmodule LLMAgent.AgentLifecycleTest do
       assert evt.data.context.trace_id =~ "trace_"
     end
 
+    test "tool dispatch event carries agent_id equal to agent name" do
+      EventBus.subscribe("agent.tool_dispatch")
+      pid = start_agent(:ctx_dispatch_id)
+
+      LLMAgent.prompt({:global, :ctx_dispatch_id}, "run something")
+      simulate_llm_response(pid, tool_json("bash", "exec", %{"command" => "echo id"}))
+
+      assert_receive {:event, "agent.tool_dispatch", %EventStruct{} = evt}
+      assert evt.data.agent_id == :ctx_dispatch_id
+    end
+
+    test "tool invocation event carries agent_id equal to agent name" do
+      EventBus.subscribe("tool.bash")
+      pid = start_agent(:ctx_agent_id)
+
+      LLMAgent.prompt({:global, :ctx_agent_id}, "run something")
+      simulate_llm_response(pid, tool_json("bash", "exec", %{"command" => "echo id"}))
+
+      assert_receive {:event, "tool.bash", %EventStruct{} = evt}
+      assert evt.data.agent_id == :ctx_agent_id
+    end
+
     test "each prompt gets a unique request_id" do
       EventBus.subscribe("agent.prompt")
       pid = start_agent(:ctx_unique)

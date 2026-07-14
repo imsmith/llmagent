@@ -126,9 +126,9 @@ defmodule LLMAgent do
 
     case parse_tool_call(content) do
       {:tool_call, tool, action, args} ->
-        Events.emit(:tool_dispatch, "agent.tool_dispatch", %{tool: tool, action: action}, __MODULE__)
+        Events.emit(:tool_dispatch, "agent.tool_dispatch", %{agent_id: state.name, tool: tool, action: action}, __MODULE__)
 
-        result = timed_dispatch(tool, action, args, state.allowed_tools)
+        result = timed_dispatch(tool, action, args, state.allowed_tools, state.name)
         followup = format_tool_result(result)
 
         updated =
@@ -234,7 +234,7 @@ defmodule LLMAgent do
 
   ## Tool Dispatch
 
-  defp timed_dispatch(tool, action, args, allowed) do
+  defp timed_dispatch(tool, action, args, allowed, agent_id) do
     Contexts.put(:tool, tool)
     Contexts.put(:action, action)
 
@@ -257,6 +257,7 @@ defmodule LLMAgent do
     end
 
     Events.emit(:invocation, "tool.#{tool}", %{
+      agent_id: agent_id,
       action: action,
       args: sanitize_args(args),
       result: result_status,

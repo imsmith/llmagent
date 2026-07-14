@@ -65,7 +65,7 @@ defmodule LLMAgent.AgentSupervisor do
   List all running agents with their state information.
 
   Returns a list of maps containing each agent's name, role, model,
-  api_host, and history length.
+  api_host, llm_client, memory, and history length.
 
   ## Examples
 
@@ -84,6 +84,8 @@ defmodule LLMAgent.AgentSupervisor do
         role: state.role,
         model: state.model,
         api_host: state.api_host,
+        llm_client: state.llm_client,
+        memory: state.memory,
         history_length: length(state.history)
       }
     end)

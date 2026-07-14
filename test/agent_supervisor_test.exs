@@ -1,4 +1,8 @@
 defmodule LLMAgent.AgentSupervisorTest do
+  @moduledoc """
+  Tests for the AgentSupervisor DynamicSupervisor: start/stop, listing
+  running agents, and surfacing per-agent state.
+  """
   use ExUnit.Case, async: false
 
   alias LLMAgent.AgentSupervisor
@@ -57,6 +61,25 @@ defmodule LLMAgent.AgentSupervisorTest do
       agents = AgentSupervisor.list_agents()
       assert pid1 in agents
       assert pid2 in agents
+    end
+  end
+
+  describe "list_agents_with_state/0" do
+    test "includes llm_client and memory for each agent" do
+      name = :"sup_state_#{System.unique_integer([:positive])}"
+      {:ok, pid} = AgentSupervisor.start_agent(name: name)
+
+      agent =
+        AgentSupervisor.list_agents_with_state()
+        |> Enum.find(&(&1.pid == pid))
+
+      assert agent != nil
+      assert Map.has_key?(agent, :llm_client)
+      assert Map.has_key?(agent, :memory)
+
+      state = :sys.get_state(pid)
+      assert agent.llm_client == state.llm_client
+      assert agent.memory == state.memory
     end
   end
 
