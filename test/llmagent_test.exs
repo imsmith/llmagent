@@ -152,6 +152,26 @@ defmodule LLMAgentTest do
       assert function_msg.content =~ "dispatched"
     end
 
+    test "dispatches tool call wrapped in markdown code fences" do
+      pid = start_agent(:dispatch_fenced)
+
+      tool_json =
+        Jason.encode!(%{
+          "tool" => "bash",
+          "action" => "exec",
+          "args" => %{"command" => "echo fenced"}
+        })
+
+      fenced = "```json\n" <> tool_json <> "\n```"
+
+      simulate_llm_response(pid, fenced)
+      state = get_state(:dispatch_fenced)
+
+      function_msg = Enum.find(state.history, &(&1.role == "function"))
+      assert function_msg != nil
+      assert function_msg.content =~ "fenced"
+    end
+
     test "dispatches crypto tool correctly" do
       pid = start_agent(:dispatch_crypto)
 

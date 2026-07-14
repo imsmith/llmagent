@@ -412,7 +412,7 @@ defmodule LLMAgent do
   end
 
   defp parse_tool_call(content) do
-    case Jason.decode(content) do
+    case Jason.decode(strip_code_fences(content)) do
       {:ok, %{"tool" => tool, "action" => action, "args" => args}} ->
         {:tool_call, String.to_atom(tool), action, args}
 
@@ -422,11 +422,25 @@ defmodule LLMAgent do
   end
 
   defp tool_call?(content) do
-    case Jason.decode(content) do
+    case Jason.decode(strip_code_fences(content)) do
       {:ok, %{"tool" => _, "action" => _}} -> true
       _ -> false
     end
   end
+
+  # Small models often wrap tool-call JSON in a markdown code fence
+  # (```json … ``` or ``` … ```). Strip a single leading/trailing fence
+  # so the payload decodes; non-fenced content passes through untouched.
+  defp strip_code_fences(content) when is_binary(content) do
+    trimmed = String.trim(content)
+
+    case Regex.run(~r/\A```(?:[a-zA-Z0-9_-]+)?\n(.*)\n```\z/s, trimmed) do
+      [_, inner] -> String.trim(inner)
+      _ -> trimmed
+    end
+  end
+
+  defp strip_code_fences(content), do: content
 
   defp format_tool_result({:ok, %{output: output, metadata: metadata}}) do
     Jason.encode!(%{status: "ok", output: output, metadata: metadata})
