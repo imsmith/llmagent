@@ -128,6 +128,73 @@ an `ad/0`, since nothing structurally prevents the same drift elsewhere.
 
 ---
 
+## `bin-watch.tcl` blast radius launders through a wrapper script
+
+**Filed:** 2026-08-05
+**Reported from:** reviewing whether `:filesystem` belongs in the `:exec` adapter's default allowlist
+
+### Symptom
+
+A script whose entire body invokes another local tool is classified as harmless,
+regardless of what that tool does. Four fixtures, read by the shim:
+
+```text
+,nuke       rm -rf "$1"      :requires ["rm"]  :blast_radius {:scope :filesystem …}
+,privileged sudo apt update  :requires ["apt" "sudo"]  :blast_radius {:scope :system …}
+,readonly   pdfinfo "$1"     :requires ["pdfinfo"]     :blast_radius {:scope :none}
+,wrapper    ,nuke "$1"       :requires []              :blast_radius {:scope :none}
+```
+
+`,wrapper` deletes a caller-chosen path. It is advertised with no dependencies,
+the most permissive blast radius, and `:extraction :complete` — an explicit claim
+that the reading is trustworthy.
+
+### Why it happens
+
+Two mechanisms compound.
+
+1. **Blast radius is computed per file, not over the call graph.** `mutates`,
+   `privileged` and `destructive` are set from membership in `MUTATION_SIGNALS`,
+   `PREFIX_COMMANDS` and `DESTRUCTIVE_SIGNALS` — lists of *external* command
+   names. A watched tool invoking another watched tool inherits nothing from it.
+2. **Comma-prefixed names are invisible as dependencies.** The plausibility test
+   in `command_position_tokens` requires a candidate to match
+   `^[A-Za-z0-9_][A-Za-z0-9_.-]*$`. A leading `,` fails it, so the token is never
+   recorded. Every `,`-prefixed tool in `~/bin` — which is to say the entire
+   population this shim's own header warns about — cannot appear in any other
+   script's `:requires`.
+
+The second is what makes the first exploitable rather than theoretical.
+
+### Why it matters
+
+This fails in the dangerous direction, and it fails silently. Unlike the
+`strip_noise` desync filed below, there is no unusual input involved: a wrapper
+script is an ordinary thing to write, and the resulting ad claims maximum
+confidence. Any consumer gating on `:blast_radius` — which is what the `:exec`
+adapter's guards do — is defeated by one level of indirection.
+
+Not currently reachable: no production caller dispatches `command.local.*`, and
+`Policy` denies by default. It becomes reachable the moment a host writes a
+`command.local.*` allow rule.
+
+### What should change
+
+Three candidates, roughly in order of cost:
+
+1. Fix the plausibility test so tool names that are not identifiers are still
+   recorded as requirements. This alone turns `,wrapper` from `:none` into
+   something with a visible dependency.
+2. Resolve requirements against the watched set and take the maximum blast radius
+   over the call graph. Closes the transitive hole for tools this shim can see.
+3. Treat `:blast_radius` as advisory ranking metadata rather than an
+   authorization input, and put enforcement where it can be enforced — see the
+   note in the `:exec` design doc about containment versus prediction.
+
+(1) and (2) narrow the hole. Only (3) closes the class.
+
+---
+
 ## `strip_noise` loses sync on an unbalanced `$(` or quote
 
 **Filed:** 2026-08-05
