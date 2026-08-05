@@ -67,17 +67,27 @@ defmodule LLMAgent.Tool.Adapter.Exec do
         nil -> nil
       end
 
-    collect(port, os_pid, timeout(opts), [], 0, started)
+    total_timeout = timeout(opts)
+    deadline = started + total_timeout
+    collect(port, os_pid, total_timeout, deadline, [], 0, started)
   rescue
     e in ErlangError -> {:error, {:spawn_failed, e}}
     e in ArgumentError -> {:error, {:spawn_failed, e}}
   end
 
-  defp collect(port, os_pid, timeout, acc, size, started) do
+  # `total_timeout` bounds total wall-clock runtime, not idle time between
+  # chunks: `deadline` is fixed once in `run/3` and the `after` value here is
+  # the *remaining* budget, so a process that emits output continuously (a
+  # progress bar, `pv`, any of the "dd | pv | sudo dd" tools this module's
+  # moduledoc warns about) still gets killed on schedule instead of resetting
+  # the clock on every chunk.
+  defp collect(port, os_pid, total_timeout, deadline, acc, size, started) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
     receive do
       {^port, {:data, chunk}} ->
         {acc, size} = accumulate(acc, size, chunk)
-        collect(port, os_pid, timeout, acc, size, started)
+        collect(port, os_pid, total_timeout, deadline, acc, size, started)
 
       {^port, {:exit_status, status}} ->
         output = finish(acc)
@@ -93,10 +103,10 @@ defmodule LLMAgent.Tool.Adapter.Exec do
           {:error, {:exit_status, status, output}}
         end
     after
-      timeout ->
+      remaining ->
         LLMAgent.OSProcess.reap(os_pid)
         safe_close(port)
-        {:error, {:timeout, timeout, finish(acc)}}
+        {:error, {:timeout, total_timeout, finish(acc)}}
     end
   end
 

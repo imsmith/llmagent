@@ -42,6 +42,34 @@ defmodule LLMAgent.Tool.Adapter.ExecTest do
     Exec.act(payload, "run", args, nil, [{:ad, ad} | extra_opts])
   end
 
+  # A killed child stays in /proc as a zombie until the VM reaps it, so
+  # existence alone is not liveness — read the state field out of stat.
+  # (Same technique as test/llmagent/discovery/port_adapter_test.exs.)
+  defp os_alive?(os_pid) do
+    case File.read("/proc/#{os_pid}/stat") do
+      {:ok, stat} ->
+        state = stat |> String.split(") ") |> List.last() |> String.first()
+        state != "Z"
+
+      {:error, _} ->
+        false
+    end
+  end
+
+  # `Exec.act/5` does not hand back the os_pid it spawned, so to check that a
+  # timed-out process is actually gone we scan /proc for any process whose
+  # cmdline still mentions the fixture's (unique, per-test) path.
+  defp survivors(path) do
+    File.ls!("/proc")
+    |> Enum.filter(&Regex.match?(~r/^\d+$/, &1))
+    |> Enum.filter(fn pid ->
+      case File.read("/proc/#{pid}/cmdline") do
+        {:ok, cmdline} -> String.contains?(cmdline, path)
+        {:error, _} -> false
+      end
+    end)
+  end
+
   test "runs a command and returns its output", %{dir: dir} do
     path = fixture(dir, "hello.sh", "#!/bin/bash\necho hello\n")
     assert {:ok, output, meta} = call(path, %{})
@@ -85,6 +113,26 @@ defmodule LLMAgent.Tool.Adapter.ExecTest do
     ad = %{ad_for(path) | meta: %{extraction: :complete, no_shebang: true}}
     assert {:ok, output, _meta} = call(path, %{}, [], ad)
     assert output =~ "bare"
+  end
+
+  # A process that emits output faster than the timeout can never trip an
+  # idle/inactivity timeout — each chunk would reset the clock. exec_timeout
+  # must bound total wall-clock runtime instead, or tools like `pv` (named in
+  # the moduledoc) would run forever.
+  test "kills the process on a total wall-clock timeout, even with continuous output",
+       %{dir: dir} do
+    path = fixture(dir, "chatty.sh", "#!/bin/bash\nwhile true; do echo tick; sleep 0.05; done\n")
+
+    started = System.monotonic_time(:millisecond)
+    assert {:error, {:timeout, 400, _output}} = call(path, %{}, exec_timeout: 400)
+    elapsed = System.monotonic_time(:millisecond) - started
+
+    assert elapsed < 3_000,
+           "timeout took #{elapsed}ms; an idle-reset timeout would never fire " <>
+             "against continuous output, so this bounds for a total-budget timeout only"
+
+    refute survivors(path) |> Enum.any?(&os_alive?/1),
+           "chatty.sh OS process(es) survived the exec timeout"
   end
 
   test "an unknown action is refused", %{dir: dir} do
