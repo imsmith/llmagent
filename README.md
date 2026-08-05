@@ -19,7 +19,7 @@ User Prompt
     │                                       │
     ▼                                       ▼
 ┌──────────┐                         ┌──────────────┐
-│ EventLog │◀────────────────────────│ 10 Tools +   │
+│ EventLog │◀────────────────────────│ 12 Tools +   │
 │ MCP Servers  │
 │ EventBus │                         └──────────────┘
 │DurableLog│
@@ -55,9 +55,12 @@ LLMAgent.Supervisor (one_for_one)
 │   ├── LLMAgent.MCP.Connection (:github)   ← started at runtime
 │   └── LLMAgent.MCP.Connection (:weather)  ← started at runtime
 ├── Registry (LLMAgent.TupleSpace.Registry)
-└── DynamicSupervisor (LLMAgent.TupleSpace.Supervisor)
-    ├── LLMAgent.TupleSpace.Space (:default)   ← started by Application
-    └── LLMAgent.TupleSpace.Space (:tasks)     ← started at runtime
+├── DynamicSupervisor (LLMAgent.TupleSpace.Supervisor)
+│   ├── LLMAgent.TupleSpace.Space (:default)   ← started by Application
+│   └── LLMAgent.TupleSpace.Space (:tasks)     ← started at runtime
+├── LLMAgent.Tools.Discovery
+└── LLMAgent.Discovery.AdapterSupervisor
+    └── (one child per configured discovery adapter, e.g. mDNS, bin-watch)
 ```
 
 Multiple agents run concurrently under `AgentSupervisor`. Each agent has its own history, role, and model configuration. Start and stop agents at runtime via `LLMAgent.AgentSupervisor.start_agent/1` and `stop_agent/1`.
@@ -76,6 +79,8 @@ Multiple agents run concurrently under `AgentSupervisor`. Each agent has its own
 | udev | `Tools.Udev` | `list`, `info`, `usb`, `pci` | Device management |
 | crypto | `Tools.Crypto` | `sha256`, `hmac`, `generate_key`, `generate_keypair`, `sign`, `verify` | Cryptographic operations |
 | inotify | `Tools.Inotify` | `watch`, `poll`, `stop`, `list` | Filesystem event monitoring |
+| tuplespace | `Tools.TupleSpace` | `write`, `read`, `take`, `read_nowait`, `take_nowait`, `list_spaces`, `create_space`, `destroy_space` | JSON-aware access to the tuple space |
+| agent | `Tools.Agent` | `spawn`, `kill`, `list`, `status` | Lifecycle for child agents |
 
 All tools implement the `LLMAgent.Tool` behaviour and return a standard format:
 
@@ -162,6 +167,41 @@ Each MCP connection is a supervised GenServer that:
 4. Proxies `tools/call` requests through the transport
 
 Tools are namespaced by server name to avoid collisions. A `:github` server exposing `create_issue` becomes `:github_create_issue`.
+
+### Locally Discovered Commands (`:exec` binding)
+
+`LLMAgent.Discovery.AdapterSupervisor` runs discovery adapters — including the
+Tcl shim `priv/discovery/bin-watch.tcl`, which scans local executables and
+registers each as a `command.local.*` ad — with `LLMAgent.Tools.Discovery`.
+That makes locally discovered commands invocable through the same dispatcher
+as native and MCP tools, via `LLMAgent.Tool.Bindings`' `:exec` binding kind and
+its adapter, `LLMAgent.Tool.Adapter.Exec`.
+
+The binding payload is `%{argv: [path], interpreter: name}`. Caller arguments
+arrive as `%{"args" => ["a", "b"]}` and are appended to argv verbatim.
+**Execution is argv-only — no shell is ever involved**, so `;`, `|`, backticks,
+and `$(...)` in an argument are inert text, not shell syntax. A file with no
+shebang is still run as an argv exec (`sh <path> <args...>`), not as a shell
+command string.
+
+Because every `bin-watch.tcl` ad is `:fidelity :speculative` — inferred by
+reading source, never by running the tool — the adapter's `act/5` refuses
+before executing anything, in order: unknown action, arity mismatch, blast
+radius, extraction. Blast radius only proceeds on `:none` or `:filesystem`;
+extraction only proceeds on `:complete`. A missing, malformed, or unreadable
+signal refuses rather than assumes permission. Refusals lift per call via the
+`exec_allow_blast_radius:` and `exec_allow_extraction:` opts. `exec_timeout`
+bounds total wall-clock runtime (default 30_000 ms) and output is capped at
+262_144 bytes; `idempotency_key` is accepted and ignored because these
+commands have no idempotency mechanism.
+
+These guards are defense in depth, not the access-control layer.
+`LLMAgent.Tool.Policy` still runs first in `LLMAgent.Tool.Dispatcher` and
+denies everything by default (empty allow list, `fidelity_min: :trained`
+against ads that are `:speculative`) — **discovery alone does not make a
+locally found command callable.** See
+`docs/superpowers/specs/2026-08-05-exec-binding-adapter-design.md` for the
+full design.
 
 ### Tuple Space
 
@@ -444,4 +484,4 @@ System binaries used by tools: `bash`, `ip`, `ping`, `dig`, `ps`, `systemctl`, `
 mix test    # 109 doctests, 232 tests
 ```
 
-Coverage includes agent lifecycle (multi-turn tool loops, stop/restart, concurrent agents, context propagation, event ordering, memory persistence, DurableLog reconstruction), all 10 native tools, MCP client integration (transport, connection lifecycle, tool discovery, proxy dispatch, facade API), event wiring, context enrichment, durable event persistence, and error handling.
+Coverage includes agent lifecycle (multi-turn tool loops, stop/restart, concurrent agents, context propagation, event ordering, memory persistence, DurableLog reconstruction), all 12 native tools, MCP client integration (transport, connection lifecycle, tool discovery, proxy dispatch, facade API), event wiring, context enrichment, durable event persistence, and error handling.

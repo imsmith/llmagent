@@ -381,6 +381,22 @@ Either add a `:generate` dispatch branch so standalone llmagent can use what it
 discovers, or document that discovery is a service llmagent provides to hosts
 rather than something it consumes.
 
+### Partial resolution — 2026-08-05
+
+The `:exec` binding adapter (`LLMAgent.Tool.Adapter.Exec`, registered in
+`LLMAgent.Tool.Bindings`) makes discovered `command.local.*` ads from
+`priv/discovery/bin-watch.tcl` consumable through
+`LLMAgent.Tool.Dispatcher.act/4`. The original complaint — "advertises
+endpoints it never dials" — no longer holds for that half of discovery: a
+locally discovered command is now dispatchable end to end, subject to
+`LLMAgent.Tool.Policy` (deny-by-default) and the adapter's own refusal guards.
+
+**Not resolved:** the mDNS `compute.llm.chat` ads are untouched. There is
+still no `:generate` dispatch branch in `LLMAgent.ex`, and the agent's LLM
+call still goes through `llm_client`/`api_host` rather than
+`Dispatcher.generate` against a discovered ad. The original symptom and
+consequence stand as written for that ad kind — this entry stays open.
+
 ---
 
 ## Two of the seven canonical kinds are declared by nothing
@@ -447,3 +463,14 @@ The dated analysis document is defensible as a historical record — it carries
 its date. The README counts are not. Fix the tool count and the supervision
 tree, and reword the migration note to say "registry retirement" rather than
 "migrations", since `ad/0` adoption is complete.
+
+### Partial resolution — 2026-08-05
+
+README's diagram, tools table, supervision tree, and test-count line now say
+12, and the supervision tree lists `LLMAgent.Tools.Discovery` and
+`LLMAgent.Discovery.AdapterSupervisor`. Both README symptoms above are fixed.
+
+**Not resolved:** `arch/analysis-design-vs-implementation-vs-openclaw.md` was
+not touched — this task's scope was `README.md` and `ISSUES.md` only. The
+stale "not implemented" claims and the "migrations in progress" wording in
+that file still stand and still need the rewording described above.
