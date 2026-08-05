@@ -133,4 +133,18 @@ test requires-explicit-dep-check {command -v NAME is still read as a dependency}
         "#!/bin/bash\ncommand -v metaflac >/dev/null\n"] requires] "metaflac"] >= 0}
 } -result 1
 
+# Running a binary is I/O, and "this tool has no side effects" is an inference
+# from reading source, not a fact. Declaring :query would put a purity label on
+# a guess. The read-only distinction survives in :blast_radius instead.
+test kinds-always-action {every ad declares :action, never :query} -body {
+    set harmless [facts_for harmless.sh "#!/bin/bash\npdfinfo \"\$1\"\n"]
+    set risky    [facts_for risky.sh "#!/bin/bash\nrm -rf \"\$1\"\n"]
+    list [kinds_for $harmless] [kinds_for $risky]
+} -result {action action}
+
+test blast-radius-still-distinguishes {the read-only signal survives in blast_radius} -body {
+    set harmless [facts_for harmless2.sh "#!/bin/bash\npdfinfo \"\$1\"\n"]
+    string match "*:scope :none*" [blast_radius $harmless]
+} -result 1
+
 cleanupTests

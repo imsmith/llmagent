@@ -27,7 +27,8 @@ defmodule LLMAgent.Tool.Bindings do
 
   @canonical %{
     module: LLMAgent.Tool.Adapter.Module,
-    openai_chat: LLMAgent.Tool.Adapter.OpenAIChat
+    openai_chat: LLMAgent.Tool.Adapter.OpenAIChat,
+    exec: LLMAgent.Tool.Adapter.Exec
   }
 
   @doc "Seed the registry with canonical bindings."
