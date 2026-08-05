@@ -35,9 +35,6 @@ defmodule LLMAgent.Discovery.PortAdapter do
   @enforce_keys [:name, :port]
   defstruct [:name, :port, :os_pid]
 
-  # Grace between SIGTERM and SIGKILL when reaping a shim.
-  @term_grace_ms 200
-
   @type opts :: [
           name: atom(),
           command: binary(),
@@ -144,41 +141,12 @@ defmodule LLMAgent.Discovery.PortAdapter do
       Port.close(port)
     end
 
-    reap(os_pid)
+    # Closing the port closes the pipes; it does not signal the program. A shim
+    # that does not exit on stdin EOF survives the adapter, keeps scanning, and
+    # keeps holding the stdout it inherited — which hangs whatever is reading
+    # that pipe, `mix test` included. Shims watch stdin for their half of this;
+    # this half covers the ones that do not.
+    LLMAgent.OSProcess.reap(os_pid)
     :ok
-  end
-
-  # Closing the port closes the pipes; it does not signal the program. A shim
-  # that does not exit on stdin EOF survives the adapter, keeps scanning, and
-  # keeps holding the stdout it inherited — which hangs whatever is reading
-  # that pipe, `mix test` included. Shims watch stdin for their half of this;
-  # this half covers the ones that do not.
-  @spec reap(non_neg_integer() | nil) :: :ok
-  defp reap(nil), do: :ok
-
-  defp reap(os_pid) do
-    signal(os_pid, "-TERM")
-    Process.sleep(@term_grace_ms)
-
-    if os_alive?(os_pid) do
-      signal(os_pid, "-KILL")
-    end
-
-    :ok
-  end
-
-  defp signal(os_pid, sig) do
-    System.cmd("kill", [sig, Integer.to_string(os_pid)], stderr_to_stdout: true)
-    :ok
-  rescue
-    # `kill` missing from PATH is not worth taking a shutdown down for.
-    ErlangError -> :ok
-  end
-
-  defp os_alive?(os_pid) do
-    {_, status} = System.cmd("kill", ["-0", Integer.to_string(os_pid)], stderr_to_stdout: true)
-    status == 0
-  rescue
-    ErlangError -> false
   end
 end

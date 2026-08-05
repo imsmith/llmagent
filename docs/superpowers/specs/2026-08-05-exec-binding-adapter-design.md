@@ -103,6 +103,7 @@ LLMAgent.Tool.Dispatcher.act(
   "command.local.,slugify",
   "run",
   %{"args" => ["My File.txt"]},
+  nil,
   policy: policy
 )
 ```
@@ -123,9 +124,20 @@ LLMAgent.Tool.Dispatcher.act(
 {:error, {:refused, :blast_radius, :system}}
 {:error, {:refused, :extraction, :incomplete}}
 {:error, {:arity_mismatch, [expected: 1, got: 2]}}
+{:error, {:refused, :arity, :unknown}}
+{:error, {:refused, :binding, :malformed}}
 {:error, {:unknown_action, "frobnicate"}}
 {:error, {:spawn_failed, reason}}
 ```
+
+`{:refused, :arity, :unknown}` covers a missing or malformed action spec: no
+`:actions` key, no `"run"` entry, a non-integer or negative arity, a non-boolean
+`variadic`, or a non-list `args["args"]`. Absence of a signal is not permission,
+so it refuses rather than defaulting to a zero-argument call.
+
+`{:refused, :binding, :malformed}` covers a binding payload whose `:argv` is
+missing, empty, or does not begin with a binary path. Like every other malformed
+input here it refuses rather than raising out through the dispatcher.
 
 ## Guard order
 
@@ -145,10 +157,15 @@ Evaluated in this order; the first failure returns.
 Guards 3 and 4 are lifted per call:
 
 ```elixir
-Dispatcher.act(coord, "run", args,
+Dispatcher.act(coord, "run", args, nil,
   exec_allow_blast_radius: [:system],
   exec_allow_extraction: [:incomplete])
 ```
+
+`act/5` is `act(ad_or_coord, action, args, idempotency_key, opts)`. The fourth
+positional argument is the idempotency key, so the `nil` above is load-bearing:
+a four-argument call binds the keyword list to `idempotency_key` and runs under
+the default deny-all policy with no lift opts in effect.
 
 `Policy.decide/4` still runs first and still denies everything by default. A
 policy that permits a `:system` tool does not by itself lift guard 3 — the call
@@ -156,13 +173,18 @@ must opt in explicitly.
 
 ## Execution mechanics
 
-**No shell, ever.** The argv head is the executable and caller args are appended
-as separate argv entries. `;`, `|`, backticks and `$(…)` arrive as inert argument
+**No shell, ever.** The whole of the binding's `argv` is the command prefix —
+its head is the executable and its tail precedes the caller args, which are
+appended as separate argv entries. Keeping only the head would silently turn an
+`argv: ["/usr/bin/env", "myscript"]` ad into "run `/usr/bin/env` with
+model-controlled arguments". `;`, `|`, backticks and `$(…)` arrive as inert argument
 text. There is no code path that builds a command string.
 
 **Files without a shebang.** The shim flags these as `meta.no_shebang`; the kernel
-cannot exec them directly. They run as `sh <path> <args...>` — still an argv exec
-with the script as an argument, not a shell command string.
+cannot exec them directly. They run as `sh -- <path> <args...>` — still an argv exec
+with the script as an argument, not a shell command string. The `--` stops `sh`
+reading a path that begins with `-` as an option; `sh -c` is the only route to a
+shell anywhere in this adapter, and this closes it.
 
 **Spawning.** `Port.open({:spawn_executable, path}, [:binary, :exit_status, :stderr_to_stdout, {:args, args}])`.
 A port is used rather than `System.cmd/3` because `System.cmd/3` cannot be
@@ -180,6 +202,16 @@ truncated and `truncated: true` appears in the metadata.
 **Environment and working directory.** Inherited from the BEAM unless the caller
 passes `exec_env:` or `exec_cd:`.
 
+**Process ownership.** The port is opened inside a process the adapter spawns,
+never in the caller's. On a timeout the dying child's final `{port, {:data, _}}`
+and `{port, {:exit_status, _}}` messages land in that runner's mailbox and die
+with it, so a GenServer caller — `LLMAgent` has no catch-all `handle_info/2` —
+never receives stray port mail. The runner also monitors its caller: if the
+caller dies while collection is blocked, the runner reaps the OS process instead
+of leaving it running and holding the stdout it inherited. The runner bounds its
+own runtime and reports the timeout itself, so the caller does not need a
+competing timeout of its own.
+
 **Idempotency.** `act/5` receives `idempotency_key` and ignores it. These commands
 have no idempotency mechanism; honouring the parameter would be a claim the
 adapter cannot keep. Documented in the moduledoc rather than silently dropped.
@@ -188,7 +220,7 @@ adapter cannot keep. Documented in the moduledoc rather than silently dropped.
 
 | File | Change |
 | --- | --- |
-| `lib/llmagent/tool/dispatcher.ex` | Put resolved ad into `opts` before `invoke` |
+| `lib/llmagent/tool/dispatcher.ex` | Put resolved ad into `opts` before `invoke`; check `function_exported?` on the adapter before dispatching a kind |
 | `lib/llmagent/tool/bindings.ex` | Add `exec: LLMAgent.Tool.Adapter.Exec` to `@canonical` |
 | `lib/llmagent/os_process.ex` | New. TERM/grace/KILL reaping |
 | `lib/llmagent/discovery/port_adapter.ex` | Use `OSProcess` instead of its private `reap/1` |

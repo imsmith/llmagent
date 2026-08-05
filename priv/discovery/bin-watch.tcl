@@ -750,10 +750,18 @@ proc blast_radius {facts} {
     return "{:scope :none}"
 }
 
+# Every ad declares :action, never :query.
+#
+# LLMAgent.Tool.Adapter documents :query as "pure, idempotent, no side effects".
+# Running a binary is I/O, and the claim that a particular binary is harmless is
+# an inference drawn from reading its source — exactly the sort of unverified
+# assertion :fidelity exists to flag. Labelling a guess as purity inverts that.
+#
+# The distinction is not lost: it lives in :blast_radius, where it is honestly
+# presented as an inference. A consumer wanting harmless tools filters on
+# {:scope :none} rather than trusting a purity claim.
 proc kinds_for {facts} {
-    if {[dict get $facts extraction_incomplete]} { return {action} }
-    if {[dict get $facts mutates] || [dict get $facts privileged]} { return {action} }
-    return {query}
+    return {action}
 }
 
 proc ad_id_for {path} {

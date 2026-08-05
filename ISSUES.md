@@ -2,6 +2,132 @@
 
 Tracked here until they migrate to a real issue tracker. Newest first.
 
+## `OSProcess.alive?/1` misreads a process whose name contains `") "`
+
+**Filed:** 2026-08-05
+**Reported from:** whole-branch review of the `:exec` binding adapter
+
+### Symptom
+
+`LLMAgent.OSProcess.alive?/1` reads `/proc/<pid>/stat` and extracts the state
+field with:
+
+```elixir
+state = stat |> String.split(") ") |> List.last() |> String.first()
+```
+
+For a process whose `comm` field contains the two-character sequence `") "` —
+`comm` is attacker-controlled for any process that can `exec` or `prctl` its own
+name — the split produces more pieces than expected and `List.last/1` returns a
+later field of the stat line rather than the state character. `alive?/1` then
+compares the wrong character against `"Z"`.
+
+### Why it matters
+
+`reap/2` calls `alive?/1` to decide whether to escalate from SIGTERM to SIGKILL.
+A misread can go either way: a live process reported as a zombie is never
+SIGKILLed and survives, holding the stdout it inherited — the exact failure
+`OSProcess`'s moduledoc exists to describe.
+
+Not currently reachable in this repo: both callers pass a pid they just spawned
+themselves, from a path or shim they chose. It is a latent defect in a module
+whose whole purpose is being the trustworthy last resort.
+
+### What should change
+
+Split on the *last* `)` rather than on the first occurrence of `") "`. The
+`comm` field is the only one that can contain a `)`, and the kernel guarantees
+it is parenthesised, so the last `)` in the line always terminates it —
+`:binary.matches(stat, ")") |> List.last()` gives the offset to slice from.
+`test/llmagent/tool/adapter/exec_test.exs` and
+`test/llmagent/discovery/port_adapter_test.exs` carry copies of the same parse
+in their `os_alive?/1` helpers; fix all three or extract one.
+
+---
+
+## Two `blast_radius` shapes coexist repo-wide
+
+**Filed:** 2026-08-05
+**Reported from:** whole-branch review of the `:exec` binding adapter
+
+### Symptom
+
+`ToolAd.constraint.blast_radius` carries two incompatible shapes depending on
+who built the ad:
+
+```elixir
+# lib/tools/file.ex — a per-action map, scope as the value
+%{"read" => :local, "write" => :local, "delete" => :local}
+
+# priv/discovery/bin-watch.tcl and LLMAgent.Tool.Adapter.Exec
+%{scope: :filesystem, reversible: false}
+```
+
+The vocabularies differ too: `lib/tools/*.ex` uses `:local`, `:system` and
+`:external`; the shim uses `:none`, `:filesystem` and `:system`. Nothing in
+`ToolAd` or `Wire` normalises between either the shapes or the vocabularies.
+
+### Why it matters
+
+Any consumer reading `blast_radius` has to know which producer built the ad.
+Today that costs nothing: the `lib/tools/*.ex` ads are `:module` bindings and
+never reach `Exec.check_blast_radius/2`, which is the only guard that reads the
+field, and that guard is an allowlist — an unrecognised shape falls to its
+catch-all and refuses. So the ambiguity currently fails closed.
+
+It stops failing closed the moment a second consumer reads the field, or a
+policy layer starts filtering on it. A guard that means "deny" for one producer
+and "read is safe, write is not" for another is a trap with no compile-time
+signal.
+
+### What should change
+
+Pick one shape and normalise the other into it at the edge — `Wire` for shim
+ads, `ToolAd.new/1` for in-repo ones. The `%{scope: _, reversible: _}` shape is
+the one with a documented vocabulary and the one the shim already emits; the
+per-action map is expressible as a per-action override alongside it.
+
+---
+
+## `Tools.Agent`'s `ad/0` declares actions its `perform/2` does not implement
+
+**Filed:** 2026-08-05
+**Reported from:** whole-branch review of the `:exec` binding adapter
+
+### Symptom
+
+`lib/tools/agent.ex` advertises one set of actions and implements another:
+
+```text
+ad/0        declares:  start, stop, status
+perform/2   implements: spawn, kill, list, status
+```
+
+Only `status` appears in both. An agent that selects an action from the ad and
+calls it gets an unknown-action error for `start` and `stop`; the three actions
+that actually work — `spawn`, `kill`, `list` — are invisible to anything
+reading the ad.
+
+### Why it matters
+
+The ad is the contract. Everything downstream of `LLMAgent.Tools.Discovery` —
+policy allow rules written per action, the tool descriptions handed to a model,
+any future capability check — is built from `ad/0`, not from the module's
+function heads. A policy that allows `stop` grants nothing; a policy written
+against the ad cannot grant `kill` at all.
+
+The mismatch is pre-existing and unrelated to the `:exec` work; it is filed
+here because a review confirmed it and it existed in no tracker.
+
+### What should change
+
+Reconcile the two, in whichever direction is correct for the module's intended
+API, and add a test that asserts the declared action set equals the implemented
+one. That assertion generalises: it is worth running across every module with
+an `ad/0`, since nothing structurally prevents the same drift elsewhere.
+
+---
+
 ## `strip_noise` loses sync on an unbalanced `$(` or quote
 
 **Filed:** 2026-08-05
@@ -381,6 +507,24 @@ Either add a `:generate` dispatch branch so standalone llmagent can use what it
 discovers, or document that discovery is a service llmagent provides to hosts
 rather than something it consumes.
 
+### Partial resolution — 2026-08-05
+
+The `:exec` binding adapter (`LLMAgent.Tool.Adapter.Exec`, registered in
+`LLMAgent.Tool.Bindings`) makes discovered `command.local.*` ads from
+`priv/discovery/bin-watch.tcl` consumable through
+`LLMAgent.Tool.Dispatcher.act/5`. The original complaint — "advertises
+endpoints it never dials" — no longer holds for that half of discovery: a
+locally discovered command is now dispatchable end to end, subject to
+`LLMAgent.Tool.Policy` (deny-by-default) and the adapter's own refusal guards.
+(`act/5` is `act(ad_or_coord, action, args, idempotency_key, opts)` — the
+options go fifth, after an explicit `nil` key.)
+
+**Not resolved:** the mDNS `compute.llm.chat` ads are untouched. There is
+still no `:generate` dispatch branch in `LLMAgent.ex`, and the agent's LLM
+call still goes through `llm_client`/`api_host` rather than
+`Dispatcher.generate` against a discovered ad. The original symptom and
+consequence stand as written for that ad kind — this entry stays open.
+
 ---
 
 ## Two of the seven canonical kinds are declared by nothing
@@ -447,3 +591,14 @@ The dated analysis document is defensible as a historical record — it carries
 its date. The README counts are not. Fix the tool count and the supervision
 tree, and reword the migration note to say "registry retirement" rather than
 "migrations", since `ad/0` adoption is complete.
+
+### Partial resolution — 2026-08-05
+
+README's diagram, tools table, supervision tree, and test-count line now say
+12, and the supervision tree lists `LLMAgent.Tools.Discovery` and
+`LLMAgent.Discovery.AdapterSupervisor`. Both README symptoms above are fixed.
+
+**Not resolved:** `arch/analysis-design-vs-implementation-vs-openclaw.md` was
+not touched — this task's scope was `README.md` and `ISSUES.md` only. The
+stale "not implemented" claims and the "migrations in progress" wording in
+that file still stand and still need the rewording described above.

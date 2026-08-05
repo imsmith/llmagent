@@ -161,6 +161,14 @@ defmodule LLMAgent.Tool.Dispatcher do
   Dispatches via the `:action` kind. Pass `idempotency_key` (a unique string
   per logical operation) to allow the adapter to suppress duplicate effects on
   retry.
+
+  > #### The fourth argument is the idempotency key, not the options {: .warning}
+  >
+  > `act/5` is `act(ad_or_coord, action, args, idempotency_key, opts)`. A
+  > four-argument call such as `act(coord, "run", args, policy: policy)` binds
+  > the keyword list to `idempotency_key` and leaves `opts` empty — the call
+  > then runs under the default deny-all policy. Pass `nil` explicitly:
+  > `act(coord, "run", args, nil, policy: policy)`.
   """
   @spec act(ToolAd.t() | String.t(), String.t(), map(), String.t() | nil, opts()) :: result()
   def act(ad_or_coord, action, args, idempotency_key \\ nil, opts \\ []) do
@@ -233,7 +241,12 @@ defmodule LLMAgent.Tool.Dispatcher do
          :ok <- Policy.decide(policy, ad, kind, action_str),
          :ok <- maybe_request_approval(policy, ad, kind, action_str, args, opts),
          :ok <- check_kind(ad, kind),
-         {:ok, adapter, payload} <- resolve_adapter(ad) do
+         {:ok, adapter, payload} <- resolve_adapter(ad),
+         :ok <- check_callback(adapter, kind) do
+      # Adapters that need ad context — the :exec guards read blast_radius and
+      # meta.extraction — get it here rather than having it duplicated into
+      # every binding payload.
+      opts = Keyword.put(opts, :ad, ad)
       result = invoke(adapter, kind, payload, action_or_role_or_spec, args, opts)
 
       :telemetry.execute(
@@ -291,6 +304,34 @@ defmodule LLMAgent.Tool.Dispatcher do
 
   defp check_kind(%ToolAd{kinds: kinds}, kind) do
     if kind in kinds, do: :ok, else: {:error, :kind_not_supported}
+  end
+
+  @kind_callbacks %{
+    query: {:query, 4},
+    action: {:act, 5},
+    stream: {:subscribe, 5},
+    compute: {:compute, 4},
+    generate: {:generate, 4},
+    coordinate: {:participate, 4},
+    spawn: {:spawn_child, 3}
+  }
+
+  # `check_kind/2` trusts the ad; this trusts the adapter. Every `Adapter`
+  # callback is optional — an adapter implements only the kinds its binding can
+  # carry — so an ad declaring a kind its adapter never implemented is an
+  # ordinary occurrence, not a programming error. A `:query` `:exec` ad from a
+  # peer running the pre-branch shim, or one still cached in a registry, is the
+  # live case: without this it reaches `Exec.query/4` and raises
+  # `UndefinedFunctionError` into the caller. `Adapter`'s moduledoc has always
+  # claimed this check exists.
+  defp check_callback(adapter, kind) do
+    with {:ok, {fun, arity}} <- Map.fetch(@kind_callbacks, kind),
+         true <- Code.ensure_loaded?(adapter),
+         true <- function_exported?(adapter, fun, arity) do
+      :ok
+    else
+      _ -> {:error, :kind_not_supported}
+    end
   end
 
   defp resolve_adapter(%ToolAd{binding: {binding_kind, payload}}) do
