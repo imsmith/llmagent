@@ -49,33 +49,33 @@ defmodule LLMAgent.OSProcessTest do
     close_port(port)
   end
 
-  test "alive?/1 is false for a zombie process" do
-    # Skip if perl is not available (required for stable zombie creation).
-    perl_path = System.find_executable("perl")
-    if is_nil(perl_path) do
-      flunk("perl is not available; skipping zombie test")
+  # perl is the parent that makes a stable zombie possible: it forks and never
+  # waits. Alpine's base image has no perl, so the test is defined only where
+  # it can actually run.
+  if System.find_executable("perl") do
+    test "alive?/1 is false for a zombie process" do
+      # Perl forks and never waits, leaving the child as a stable zombie.
+      perl_path = System.find_executable("perl")
+      cmd = perl_path
+      args = ["-e", "my $pid = fork(); if (!defined $pid) { die } if ($pid == 0) { exit 0 } sleep 6;"]
+      port = Port.open({:spawn_executable, cmd},
+                       [:binary, :exit_status, {:args, args}])
+      {:os_pid, parent_pid} = Port.info(port, :os_pid)
+
+      # Find the zombie child by polling the parent's children list.
+      # The child exits quickly but the parent never waits, so it becomes a stable zombie.
+      zombie_pid = find_zombie_child(parent_pid, 500)
+      assert is_integer(zombie_pid), "could not find zombie child of perl parent #{parent_pid}"
+
+      # The zombie should NOT be alive, even though it exists as a pid.
+      # This is the key assertion: kill -0 would return true; /proc stat returns false.
+      refute OSProcess.alive?(zombie_pid),
+             "zombie pid #{zombie_pid} must not be alive; this is the whole test"
+
+      # Clean up: kill the perl parent.
+      OSProcess.reap(parent_pid)
+      close_port(port)
     end
-
-    # Perl forks and never waits, leaving the child as a stable zombie.
-    cmd = perl_path
-    args = ["-e", "my $pid = fork(); if (!defined $pid) { die } if ($pid == 0) { exit 0 } sleep 6;"]
-    port = Port.open({:spawn_executable, cmd},
-                     [:binary, :exit_status, {:args, args}])
-    {:os_pid, parent_pid} = Port.info(port, :os_pid)
-
-    # Find the zombie child by polling the parent's children list.
-    # The child exits quickly but the parent never waits, so it becomes a stable zombie.
-    zombie_pid = find_zombie_child(parent_pid, 500)
-    assert is_integer(zombie_pid), "could not find zombie child of perl parent #{parent_pid}"
-
-    # The zombie should NOT be alive, even though it exists as a pid.
-    # This is the key assertion: kill -0 would return true; /proc stat returns false.
-    refute OSProcess.alive?(zombie_pid),
-           "zombie pid #{zombie_pid} must not be alive; this is the whole test"
-
-    # Clean up: kill the perl parent.
-    OSProcess.reap(parent_pid)
-    close_port(port)
   end
 
   defp find_zombie_child(parent_pid, timeout_ms) do
