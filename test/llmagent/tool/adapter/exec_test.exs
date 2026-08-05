@@ -273,5 +273,65 @@ defmodule LLMAgent.Tool.Adapter.ExecTest do
 
       assert {:error, {:refused, :blast_radius, :system}} = call(path, %{}, [], ad)
     end
+
+    test "a missing action spec refuses even a zero-argument call", %{dir: dir} do
+      path = fixture(dir, "noaction.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | operational: %{actions: %{}}}
+      assert {:error, {:refused, :arity, :unknown}} = call(path, %{}, [], ad)
+    end
+
+    test "an operational map with no actions key at all refuses", %{dir: dir} do
+      path = fixture(dir, "noactionskey.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | operational: %{}}
+      assert {:error, {:refused, :arity, :unknown}} = call(path, %{}, [], ad)
+    end
+
+    test "an out-of-vocabulary blast radius scope is refused", %{dir: dir} do
+      path = fixture(dir, "host.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | constraint: %{idempotency: %{}, blast_radius: %{scope: :host}}}
+      assert {:error, {:refused, :blast_radius, :host}} = call(path, %{}, [], ad)
+    end
+
+    test "a :filesystem blast radius proceeds", %{dir: dir} do
+      path = fixture(dir, "fs.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | constraint: %{idempotency: %{}, blast_radius: %{scope: :filesystem}}}
+      assert {:ok, output, _meta} = call(path, %{}, [], ad)
+      assert output =~ "ran"
+    end
+
+    test "an out-of-vocabulary extraction value is refused", %{dir: dir} do
+      path = fixture(dir, "partial.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | meta: %{extraction: :partial}}
+      assert {:error, {:refused, :extraction, :partial}} = call(path, %{}, [], ad)
+    end
+
+    test "a non-list args value is refused, not raised", %{dir: dir} do
+      path = fixture(dir, "badargs.sh", "#!/bin/bash\necho ran\n")
+      assert {:error, {:refused, :arity, :unknown}} =
+               call(path, %{"args" => "not a list"}, [], ad_for(path))
+    end
+
+    test "a {:ref, coord} meta is refused, not raised", %{dir: dir} do
+      path = fixture(dir, "refmeta.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | meta: {:ref, "some.coord"}}
+      assert {:error, {:refused, :extraction, :unknown}} = call(path, %{}, [], ad)
+    end
+
+    test "a {:ref, coord} constraint is refused", %{dir: dir} do
+      path = fixture(dir, "refconstraint.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | constraint: {:ref, "some.coord"}}
+      assert {:error, {:refused, :blast_radius, :unknown}} = call(path, %{}, [], ad)
+    end
+
+    test "arity is checked before blast radius", %{dir: dir} do
+      path = fixture(dir, "arityfirst.sh", "#!/bin/bash\necho ran\n")
+
+      ad = %{
+        ad_for(path, 1, false)
+        | constraint: %{idempotency: %{}, blast_radius: %{scope: :system}}
+      }
+
+      assert {:error, {:arity_mismatch, [expected: 1, got: 0]}} = call(path, %{}, [], ad)
+    end
   end
 end

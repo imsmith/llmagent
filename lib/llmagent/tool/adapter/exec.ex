@@ -45,23 +45,38 @@ defmodule LLMAgent.Tool.Adapter.Exec do
   end
 
   # Arity comes from the ad's own action spec. For a variadic tool it is a
-  # minimum; otherwise it is exact.
-  defp check_arity(ad, argv) do
-    spec = ad.operational |> Map.get(:actions, %{}) |> Map.get("run", %{})
-    arity = Map.get(spec, :arity, 0)
-    variadic = Map.get(spec, :variadic, false)
-    got = length(argv)
+  # minimum; otherwise it is exact. A missing or malformed spec — no
+  # `:actions` key, no `"run"` entry, a non-integer arity, a non-boolean
+  # variadic flag — is not "this tool takes no arguments", it is "we do not
+  # know what this tool takes", and a zero-argument call is exactly how an
+  # unparsed positional tool like `,update` would be invoked. That absent
+  # signal refuses rather than defaulting to permission. Non-list `argv`
+  # (a malformed `args["args"]`) refuses instead of raising in `length/1`.
+  defp check_arity(ad, argv) when is_list(argv) do
+    with %{actions: %{"run" => %{arity: arity, variadic: variadic}}} <- ad.operational,
+         true <- is_integer(arity) and is_boolean(variadic) do
+      got = length(argv)
 
-    cond do
-      variadic and got < arity -> {:error, {:arity_mismatch, [expected: arity, got: got]}}
-      not variadic and got != arity -> {:error, {:arity_mismatch, [expected: arity, got: got]}}
-      true -> :ok
+      cond do
+        variadic and got < arity -> {:error, {:arity_mismatch, [expected: arity, got: got]}}
+        not variadic and got != arity -> {:error, {:arity_mismatch, [expected: arity, got: got]}}
+        true -> :ok
+      end
+    else
+      _ -> {:error, {:refused, :arity, :unknown}}
     end
   end
 
-  # A tool that can reach the whole system, or whose reach could not be
-  # determined, is refused. `constraint` may legitimately be a `{:ref, coord}`
-  # tuple rather than a map; that is not a readable signal, so it refuses too.
+  defp check_arity(_ad, _argv), do: {:error, {:refused, :arity, :unknown}}
+
+  # Allowlist, not denylist: only a scope the shim's vocabulary declares safe
+  # (`:none`, `:filesystem`) proceeds. Everything else — `:system`, an
+  # out-of-vocabulary atom like `:host`, a non-atom value, a missing
+  # `blast_radius` key, or a `{:ref, coord}` constraint (which never matches
+  # the map pattern below and falls to the catch-all) — refuses. An `:exec`
+  # binding's `constraint` is not guaranteed to come from this shim's closed
+  # vocabulary, so the guard's contract can't rely on that being the only
+  # source of ads.
   defp check_blast_radius(ad, opts) do
     scope =
       case ad.constraint do
@@ -71,26 +86,40 @@ defmodule LLMAgent.Tool.Adapter.Exec do
 
     allowed = Keyword.get(opts, :exec_allow_blast_radius, [])
 
-    if scope in [:system, :unknown] and scope not in allowed do
-      {:error, {:refused, :blast_radius, scope}}
-    else
+    if scope in [:none, :filesystem] or scope in allowed do
       :ok
+    else
+      {:error, {:refused, :blast_radius, normalise_signal(scope)}}
     end
   end
 
-  # `:incomplete` and `:unsupported` both mean the ad's `:requires` list is
-  # known to be short — the tool touches more than the ad admits. A missing
-  # signal is treated the same way; absence of evidence is not permission.
+  # Allowlist, not denylist: only `:complete` extraction proceeds. `nil` or a
+  # non-map `meta` (including a `{:ref, coord}` tuple) is read the same way
+  # `check_blast_radius/2` reads `constraint` — the `case` catch-all, not a
+  # `|| %{}` fallback, so a truthy non-map value can't raise BadMapError.
+  # `:incomplete`, `:unsupported`, any other atom, and a missing signal all
+  # refuse; absence of evidence is not permission.
   defp check_extraction(ad, opts) do
-    extraction = Map.get(ad.meta || %{}, :extraction, :unknown)
+    extraction =
+      case ad.meta do
+        %{extraction: extraction} -> extraction
+        _ -> :unknown
+      end
+
     allowed = Keyword.get(opts, :exec_allow_extraction, [])
 
-    if extraction in [:incomplete, :unsupported, :unknown] and extraction not in allowed do
-      {:error, {:refused, :extraction, extraction}}
-    else
+    if extraction == :complete or extraction in allowed do
       :ok
+    else
+      {:error, {:refused, :extraction, normalise_signal(extraction)}}
     end
   end
+
+  # The reported value in a refusal tuple is always an atom, even when the
+  # observed signal was not — a stray string or other foreign type collapses
+  # to `:unknown` rather than leaking an arbitrary term into the error shape.
+  defp normalise_signal(value) when is_atom(value), do: value
+  defp normalise_signal(_value), do: :unknown
 
   # A file with no shebang cannot be exec'd by the kernel. Running it as an
   # argument to sh is still an argv exec, not a shell command string.
