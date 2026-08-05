@@ -192,4 +192,86 @@ defmodule LLMAgent.Tool.Adapter.ExecTest do
     assert {:ok, _output, meta} = call(path, %{})
     assert meta.truncated == false
   end
+
+  describe "guards" do
+    test "an exact-arity tool refuses the wrong argument count", %{dir: dir} do
+      path = fixture(dir, "one.sh", "#!/bin/bash\necho \"$1\"\n")
+      ad = ad_for(path, 1, false)
+
+      assert {:error, {:arity_mismatch, [expected: 1, got: 2]}} =
+               call(path, %{"args" => ["a", "b"]}, [], ad)
+
+      assert {:error, {:arity_mismatch, [expected: 1, got: 0]}} =
+               call(path, %{}, [], ad)
+
+      assert {:ok, _out, _meta} = call(path, %{"args" => ["a"]}, [], ad)
+    end
+
+    test "a variadic tool treats arity as a minimum", %{dir: dir} do
+      path = fixture(dir, "many.sh", "#!/bin/bash\nprintf '%s|' \"$@\"\n")
+      ad = ad_for(path, 1, true)
+
+      assert {:error, {:arity_mismatch, [expected: 1, got: 0]}} = call(path, %{}, [], ad)
+      assert {:ok, _out, _meta} = call(path, %{"args" => ["a"]}, [], ad)
+      assert {:ok, _out, _meta} = call(path, %{"args" => ["a", "b", "c"]}, [], ad)
+    end
+
+    test "a :system blast radius is refused, and lifts with an opt", %{dir: dir} do
+      path = fixture(dir, "sys.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | constraint: %{idempotency: %{}, blast_radius: %{scope: :system}}}
+
+      assert {:error, {:refused, :blast_radius, :system}} = call(path, %{}, [], ad)
+
+      assert {:ok, output, _meta} =
+               call(path, %{}, [exec_allow_blast_radius: [:system]], ad)
+
+      assert output =~ "ran"
+    end
+
+    test "an :unknown blast radius is refused", %{dir: dir} do
+      path = fixture(dir, "unk.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | constraint: %{idempotency: %{}, blast_radius: %{scope: :unknown}}}
+      assert {:error, {:refused, :blast_radius, :unknown}} = call(path, %{}, [], ad)
+    end
+
+    test "a missing blast radius is refused, not permitted", %{dir: dir} do
+      path = fixture(dir, "none.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | constraint: %{idempotency: %{}}}
+      assert {:error, {:refused, :blast_radius, :unknown}} = call(path, %{}, [], ad)
+    end
+
+    test "incomplete extraction is refused, and lifts with an opt", %{dir: dir} do
+      path = fixture(dir, "inc.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | meta: %{extraction: :incomplete}}
+
+      assert {:error, {:refused, :extraction, :incomplete}} = call(path, %{}, [], ad)
+
+      assert {:ok, _out, _meta} =
+               call(path, %{}, [exec_allow_extraction: [:incomplete]], ad)
+    end
+
+    test "unsupported extraction is refused", %{dir: dir} do
+      path = fixture(dir, "uns.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | meta: %{extraction: :unsupported}}
+      assert {:error, {:refused, :extraction, :unsupported}} = call(path, %{}, [], ad)
+    end
+
+    test "a missing extraction signal is refused", %{dir: dir} do
+      path = fixture(dir, "nometa.sh", "#!/bin/bash\necho ran\n")
+      ad = %{ad_for(path) | meta: %{}}
+      assert {:error, {:refused, :extraction, :unknown}} = call(path, %{}, [], ad)
+    end
+
+    test "blast radius is checked before extraction", %{dir: dir} do
+      path = fixture(dir, "both.sh", "#!/bin/bash\necho ran\n")
+
+      ad = %{
+        ad_for(path)
+        | constraint: %{idempotency: %{}, blast_radius: %{scope: :system}},
+          meta: %{extraction: :incomplete}
+      }
+
+      assert {:error, {:refused, :blast_radius, :system}} = call(path, %{}, [], ad)
+    end
+  end
 end

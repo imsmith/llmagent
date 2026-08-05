@@ -36,8 +36,60 @@ defmodule LLMAgent.Tool.Adapter.Exec do
     ad = Keyword.fetch!(opts, :ad)
     argv = Map.get(args, "args", [])
 
-    {exe, full_argv} = resolve_exe(payload, ad, argv)
-    run(exe, full_argv, opts)
+    with :ok <- check_arity(ad, argv),
+         :ok <- check_blast_radius(ad, opts),
+         :ok <- check_extraction(ad, opts) do
+      {exe, full_argv} = resolve_exe(payload, ad, argv)
+      run(exe, full_argv, opts)
+    end
+  end
+
+  # Arity comes from the ad's own action spec. For a variadic tool it is a
+  # minimum; otherwise it is exact.
+  defp check_arity(ad, argv) do
+    spec = ad.operational |> Map.get(:actions, %{}) |> Map.get("run", %{})
+    arity = Map.get(spec, :arity, 0)
+    variadic = Map.get(spec, :variadic, false)
+    got = length(argv)
+
+    cond do
+      variadic and got < arity -> {:error, {:arity_mismatch, [expected: arity, got: got]}}
+      not variadic and got != arity -> {:error, {:arity_mismatch, [expected: arity, got: got]}}
+      true -> :ok
+    end
+  end
+
+  # A tool that can reach the whole system, or whose reach could not be
+  # determined, is refused. `constraint` may legitimately be a `{:ref, coord}`
+  # tuple rather than a map; that is not a readable signal, so it refuses too.
+  defp check_blast_radius(ad, opts) do
+    scope =
+      case ad.constraint do
+        %{blast_radius: %{scope: scope}} -> scope
+        _ -> :unknown
+      end
+
+    allowed = Keyword.get(opts, :exec_allow_blast_radius, [])
+
+    if scope in [:system, :unknown] and scope not in allowed do
+      {:error, {:refused, :blast_radius, scope}}
+    else
+      :ok
+    end
+  end
+
+  # `:incomplete` and `:unsupported` both mean the ad's `:requires` list is
+  # known to be short — the tool touches more than the ad admits. A missing
+  # signal is treated the same way; absence of evidence is not permission.
+  defp check_extraction(ad, opts) do
+    extraction = Map.get(ad.meta || %{}, :extraction, :unknown)
+    allowed = Keyword.get(opts, :exec_allow_extraction, [])
+
+    if extraction in [:incomplete, :unsupported, :unknown] and extraction not in allowed do
+      {:error, {:refused, :extraction, extraction}}
+    else
+      :ok
+    end
   end
 
   # A file with no shebang cannot be exec'd by the kernel. Running it as an
