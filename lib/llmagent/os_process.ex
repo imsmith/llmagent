@@ -14,10 +14,14 @@ defmodule LLMAgent.OSProcess do
   @doc "True when the process exists and is not a zombie."
   @spec alive?(non_neg_integer()) :: boolean()
   def alive?(os_pid) when is_integer(os_pid) do
-    {_, status} = System.cmd("kill", ["-0", Integer.to_string(os_pid)], stderr_to_stdout: true)
-    status == 0
-  rescue
-    ErlangError -> false
+    case File.read("/proc/#{os_pid}/stat") do
+      {:ok, stat} ->
+        state = stat |> String.split(") ") |> List.last() |> String.first()
+        state != "Z"
+
+      {:error, _} ->
+        false
+    end
   end
 
   @doc """
