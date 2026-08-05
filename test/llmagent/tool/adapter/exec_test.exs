@@ -70,6 +70,18 @@ defmodule LLMAgent.Tool.Adapter.ExecTest do
     end)
   end
 
+  # Polls instead of asserting on `reap/1`'s return alone: `reap` blocks for
+  # its grace period and signals KILL, but the OS still needs a moment to
+  # actually tear the process down and flip its /proc state to zombie.
+  # (Same technique as test/llmagent/discovery/port_adapter_test.exs.)
+  defp await_death(os_pid, deadline_ms \\ 3000) do
+    cond do
+      not os_alive?(os_pid) -> true
+      deadline_ms <= 0 -> false
+      true -> Process.sleep(50) && await_death(os_pid, deadline_ms - 50)
+    end
+  end
+
   test "runs a command and returns its output", %{dir: dir} do
     path = fixture(dir, "hello.sh", "#!/bin/bash\necho hello\n")
     assert {:ok, output, meta} = call(path, %{})
@@ -140,5 +152,44 @@ defmodule LLMAgent.Tool.Adapter.ExecTest do
     payload = %{argv: [path], interpreter: "bash"}
     assert {:error, {:unknown_action, "frobnicate"}} =
              Exec.act(payload, "frobnicate", %{}, nil, ad: ad_for(path))
+  end
+
+  # Unlike the continuous-output timeout test above, this shim is silent after
+  # its first line: it writes its own pid, then blocks in `sleep` producing no
+  # further output at all. A timeout that only fires on inactivity between
+  # chunks would never distinguish this from a hang; the total-budget timeout
+  # must fire here too.
+  test "a silent, long-running command is killed on timeout", %{dir: dir} do
+    path = fixture(dir, "slow.sh", "#!/bin/bash\necho $$ > #{dir}/pidfile\nsleep 60\n")
+
+    assert {:error, {:timeout, 400, _partial}} =
+             call(path, %{}, exec_timeout: 400)
+
+    os_pid = dir |> Path.join("pidfile") |> File.read!() |> String.trim() |> String.to_integer()
+
+    assert await_death(os_pid),
+           "slow.sh OS process #{os_pid} survived the exec timeout"
+  end
+
+  test "the timeout error carries whatever output arrived first", %{dir: dir} do
+    path = fixture(dir, "chatty.sh", "#!/bin/bash\necho early\nsleep 60\n")
+
+    assert {:error, {:timeout, _, partial}} = call(path, %{}, exec_timeout: 600)
+    assert partial =~ "early"
+  end
+
+  test "output past the cap is truncated and flagged", %{dir: dir} do
+    # 300 KB, comfortably past the 256 KB cap.
+    path = fixture(dir, "loud.sh", "#!/bin/bash\nhead -c 307200 /dev/zero | tr '\\0' 'x'\n")
+
+    assert {:ok, output, meta} = call(path, %{})
+    assert meta.truncated == true
+    assert byte_size(output) == 262_144
+  end
+
+  test "output under the cap is not flagged", %{dir: dir} do
+    path = fixture(dir, "quiet.sh", "#!/bin/bash\necho small\n")
+    assert {:ok, _output, meta} = call(path, %{})
+    assert meta.truncated == false
   end
 end
