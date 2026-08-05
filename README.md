@@ -175,7 +175,12 @@ Tcl shim `priv/discovery/bin-watch.tcl`, which scans local executables and
 registers each as a `command.local.*` ad — with `LLMAgent.Tools.Discovery`.
 That makes locally discovered commands invocable through the same dispatcher
 as native and MCP tools, via `LLMAgent.Tool.Bindings`' `:exec` binding kind and
-its adapter, `LLMAgent.Tool.Adapter.Exec`.
+its adapter, `LLMAgent.Tool.Adapter.Exec`. That reach is for a direct
+`LLMAgent.Tool.Dispatcher` caller: reaching these from an agent's own tool loop
+requires the host to construct a policy allowing `command.local.*` at
+`:speculative` fidelity, and `LLMAgent`'s built-in loop does not — it resolves
+only its own legacy tool coordinates and builds every policy with
+`fidelity_min: :authoritative`.
 
 The binding payload is `%{argv: [path], interpreter: name}`. Caller arguments
 arrive as `%{"args" => ["a", "b"]}` and are appended to argv verbatim.
