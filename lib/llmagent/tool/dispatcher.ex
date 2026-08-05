@@ -234,6 +234,10 @@ defmodule LLMAgent.Tool.Dispatcher do
          :ok <- maybe_request_approval(policy, ad, kind, action_str, args, opts),
          :ok <- check_kind(ad, kind),
          {:ok, adapter, payload} <- resolve_adapter(ad) do
+      # Adapters that need ad context — the :exec guards read blast_radius and
+      # meta.extraction — get it here rather than having it duplicated into
+      # every binding payload.
+      opts = Keyword.put(opts, :ad, ad)
       result = invoke(adapter, kind, payload, action_or_role_or_spec, args, opts)
 
       :telemetry.execute(
