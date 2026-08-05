@@ -1,0 +1,46 @@
+deployment {
+    linux_host = host 'Linux host' {
+        description 'Any host running the container. The image ships wireguard-tools, openssh-client and gnupg because LLMAgent.Application checks for wg, ssh-keygen and gpg at boot.'
+        technology 'Docker / OCI runtime'
+
+        image = container_image 'llmagent image' {
+            description 'Two-stage build from Dockerfile: elixir:1.16-alpine builds MIX_ENV=prod and runs mix release llmagent; alpine:3.19 runs it as the unprivileged llmagent user from /app. CMD is bin/llmagent start. Labelled AGPL-3.0.'
+            technology 'alpine:3.19'
+
+            release = beam 'llmagent release' {
+                description 'The mix release declared in mix.exs (releases: [llmagent: [applications: [LLMAgent: :permanent]]]). Configured at runtime from LLMAGENT_MODEL, LLMAGENT_API_HOST and LLMAGENT_ROLE.'
+                technology 'BEAM / Elixir release'
+
+                instanceOf llmagent.agent_runtime
+                instanceOf llmagent.tool_substrate
+                instanceOf llmagent.native_tools
+                instanceOf llmagent.tuple_space
+                instanceOf llmagent.mcp_client
+                instanceOf llmagent.discovery_adapters
+                instanceOf llmagent.events
+                instanceOf llmagent.llm_client
+                instanceOf llmagent.utils
+            }
+        }
+    }
+
+    llm_host = host 'LLM server' {
+        description 'Host of the OpenAI-compatible endpoint. The Dockerfile default LLMAGENT_API_HOST is http://localhost:4000; config/runtime.exs defaults to http://localhost:11434/v1.'
+        technology 'Ollama / llama.cpp'
+
+        llm_svc = beam 'Chat completions service' {
+            description 'Serves POST /chat/completions.'
+            instanceOf llm_endpoint
+        }
+    }
+
+    linux_host.image.release -> llm_host.llm_svc "Chat completions over HTTP"
+}
+
+views {
+    deployment view deployment_llmagent {
+        title 'LLMAgent — Deployment'
+        description 'What the repository actually defines for deployment: the two-stage Dockerfile, the mix release, and the environment variables read by config/runtime.exs. No compose file, systemd unit or terraform exists in the repo.'
+        include *
+    }
+}

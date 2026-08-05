@@ -93,4 +93,50 @@ defmodule LLMAgent.Discovery.PortAdapterTest do
     # no exception propagated to the test process via the unlinked GenServer.
     Process.sleep(500)
   end
+
+  # A killed child stays in /proc as a zombie until the VM reaps it, so
+  # existence alone is not liveness — read the state field out of stat.
+  defp os_alive?(os_pid) do
+    case File.read("/proc/#{os_pid}/stat") do
+      {:ok, stat} ->
+        state = stat |> String.split(") ") |> List.last() |> String.first()
+        state != "Z"
+
+      {:error, _} ->
+        false
+    end
+  end
+
+  defp await_death(os_pid, deadline_ms \\ 3000) do
+    cond do
+      not os_alive?(os_pid) -> true
+      deadline_ms <= 0 -> false
+      true -> Process.sleep(50) && await_death(os_pid, deadline_ms - 50)
+    end
+  end
+
+  # `Port.close/1` closes the pipes; it does not signal the program. A shim that
+  # does not watch stdin therefore outlives the adapter, keeps running, and
+  # holds the inherited stdout open — which hangs anything reading that pipe.
+  # `sleep` stands in for such a shim: it ignores stdin entirely.
+  test "kills the shim's OS process when the adapter terminates" do
+    {:ok, pid} =
+      PortAdapter.start_link(
+        name: :test_adapter_reap,
+        command: System.find_executable("sleep"),
+        args: ["300"],
+        env: []
+      )
+
+    Process.unlink(pid)
+
+    port = :sys.get_state(pid).port
+    {:os_pid, os_pid} = Port.info(port, :os_pid)
+    assert os_alive?(os_pid), "shim did not start"
+
+    GenServer.stop(pid)
+
+    assert await_death(os_pid),
+           "shim OS process #{os_pid} survived adapter shutdown"
+  end
 end

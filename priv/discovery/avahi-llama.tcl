@@ -129,10 +129,45 @@ proc handle_line {line} {
 # buffer — that masked this for a while.
 set browse "|stdbuf -oL avahi-browse -p -r _llama._tcp 2>@stderr"
 set chan [open $browse r]
-fconfigure $chan -buffering line
+fconfigure $chan -buffering line -blocking 0
 
-while {[gets $chan line] >= 0} {
-    handle_line $line
+# Tcl does not kill a command pipeline's children when the interpreter exits,
+# so exiting without this leaves avahi-browse running — the same leak one level
+# down. Signal the pipeline before going.
+proc shutdown {} {
+    global chan
+    catch {
+        foreach p [pid $chan] { exec kill -TERM $p }
+    }
+    catch {close $chan}
+    exit 0
 }
 
-close $chan
+# Read avahi-browse as an event rather than a blocking `gets` loop, so the same
+# event loop can also watch stdin. In non-blocking mode `gets` returns -1 both
+# for "no complete line yet" and for EOF; only the latter means we are done.
+fileevent $chan readable {
+    if {[gets $chan line] >= 0} {
+        handle_line $line
+    } elseif {[eof $chan]} {
+        shutdown
+    }
+}
+
+# Exit when whoever spawned us goes away.
+#
+# Port.open/2 does not kill the external program when the port closes, so a
+# shim that never reads stdin outlives the BEAM, keeps browsing, and keeps
+# holding the stdout it inherited. That is what produces both the accumulating
+# tclsh processes and `error writing "stdout": broken pipe` — and, because the
+# inherited pipe never reaches EOF, it hangs anything reading it, `mix test`
+# included. LLMAgent.Discovery.PortAdapter kills the OS process on orderly
+# shutdown; this covers the abrupt exits where terminate/2 never runs.
+fconfigure stdin -blocking 0
+fileevent stdin readable {
+    if {[eof stdin]} { shutdown }
+    # Nothing is expected on stdin; drain it so the handler does not respin.
+    read stdin
+}
+
+vwait ::forever

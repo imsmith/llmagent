@@ -1,0 +1,53 @@
+model {
+    extend llmagent.tuple_space {
+
+        tuple_space_api = component {
+            title 'LLMAgent.TupleSpace'
+            description 'Public Linda API: out, in_, rd and the nowait variants, plus space management. Operations default to the :default space.'
+            technology 'Elixir Module'
+        }
+
+        space = component {
+            title 'LLMAgent.TupleSpace.Space'
+            description 'GenServer owning one named space. Holds an ETS duplicate_bag table, serialises out and in_ through the process, and lets rd_nowait read ETS directly.'
+            technology 'Elixir GenServer + ETS'
+        }
+
+        pattern = component {
+            title 'LLMAgent.TupleSpace.Pattern'
+            description 'Compiles Elixir tuple patterns into ETS match specs; :_ is the wildcard and everything else is a literal match.'
+            technology 'Elixir Module'
+        }
+
+        space_registry = component {
+            title 'LLMAgent.TupleSpace.Registry'
+            description 'Unique-key Registry mapping space names to Space pids.'
+            technology 'Elixir Registry'
+        }
+
+        space_supervisor = component {
+            title 'LLMAgent.TupleSpace.Supervisor'
+            description 'DynamicSupervisor under which each named Space is started.'
+            technology 'Elixir DynamicSupervisor'
+        }
+
+        tuple_space_api -[ipc]-> space_supervisor "start_space/1"
+        tuple_space_api -[ipc]-> space_registry "Resolves a space name to a pid"
+        tuple_space_api -[ipc]-> space "out, in_ and rd calls"
+        space_supervisor -[ipc]-> space "Supervises"
+        space -[ipc]-> pattern "compile/1 for every read or take"
+        space -[ipc]-> space_registry "Registers under its space name"
+    }
+
+    llmagent.native_tools -[ipc]-> llmagent.tuple_space.tuple_space_api "JSON-adapted out, in_ and rd"
+    llmagent.tuple_space.space -[message]-> llmagent.events "Emits tuple-space events"
+    llmagent.tuple_space.space -[message]-> llmagent.tool_substrate "Carries :tool_announce ads to the Discovery registry"
+}
+
+views {
+    view component_tuple_space of llmagent.tuple_space {
+        title 'Tuple Space — Components'
+        description 'The Linda coordination substrate under lib/llmagent/tuple_space/: public API, per-space GenServer, pattern compiler, registry and supervisor.'
+        include *
+    }
+}

@@ -1,0 +1,85 @@
+model {
+    extend llmagent.agent_runtime {
+
+        agent = component {
+            title 'LLMAgent'
+            description 'The agent GenServer. Registered {:global, name}. Holds role, model, api_host, llm_client, memory, history, parent monitor and allowed_tools; handles {:prompt, content} and drives the LLM / tool loop.'
+            technology 'Elixir GenServer'
+        }
+
+        agent_supervisor = component {
+            title 'LLMAgent.AgentSupervisor'
+            description 'DynamicSupervisor facade. start_agent/1, stop_agent/1, list_agents/0 and the agent-state listing used by the web UI.'
+            technology 'Elixir DynamicSupervisor'
+        }
+
+        application = component {
+            title 'LLMAgent.Application'
+            description 'OTP application callback. Seeds the tool, kind, binding and approval registries, starts the supervision tree, starts configured discovery adapters, registers built-ins, starts the root agent and the :default tuple space.'
+            technology 'Elixir Application'
+        }
+
+        task_sup = component {
+            title 'LLMAgent.TaskSup'
+            description 'Task.Supervisor used to run LLM calls off the agent GenServer process.'
+            technology 'Elixir Task.Supervisor'
+        }
+
+        role_prompt = component {
+            title 'LLMAgent.RolePrompt'
+            description 'Registry mapping role atoms to prompt modules; get/1 and roles/0. The role is set from the LLMAGENT_ROLE environment variable at boot.'
+            technology 'Elixir Module'
+        }
+
+        prompt_default = component {
+            title 'LLMAgent.Prompts.Default'
+            description 'Fallback system prompt for non-specialised agents.'
+            technology 'Elixir Module'
+        }
+
+        prompt_sysadmin = component {
+            title 'LLMAgent.Prompts.Sysadmin'
+            description 'Linux system administration system prompt.'
+            technology 'Elixir Module'
+        }
+
+        memory_behaviour = component {
+            title 'LLMAgent.Memory'
+            description 'Behaviour for per-agent memory backends: init, store, fetch, teardown, namespaced by agent_id.'
+            technology 'Elixir Behaviour'
+        }
+
+        memory_ets = component {
+            title 'LLMAgent.Memory.ETS'
+            description 'Default backend. One ETS table per agent, named :"llmagent_mem_<agent_id>", built on Comn.Repo.Table.ETS.'
+            technology 'Elixir Module + ETS'
+        }
+
+        application -[ipc]-> agent_supervisor "Starts the root agent from LLMAGENT_MODEL, LLMAGENT_API_HOST and LLMAGENT_ROLE"
+        agent_supervisor -[ipc]-> agent "start_child / terminate_child"
+        agent -[ipc]-> role_prompt "get/1 for the system message"
+        role_prompt -[ipc]-> prompt_default "Registered as :default"
+        role_prompt -[ipc]-> prompt_sysadmin "Registered as :sysadmin"
+        agent -[ipc]-> memory_behaviour "init/1 and store/fetch through the configured backend"
+        memory_ets -[ipc]-> memory_behaviour "Implements"
+        agent -[ipc]-> task_sup "Runs chat completions asynchronously"
+    }
+
+    llmagent.agent_runtime.agent -[ipc]-> llmagent.llm_client "chat/2"
+    llmagent.agent_runtime.agent -[ipc]-> llmagent.tool_substrate "Dispatcher call gated by Tool.Policy"
+    llmagent.agent_runtime.agent -[message]-> llmagent.events "emit/4 for prompt, response, dispatch, message and error"
+    llmagent.agent_runtime.application -[ipc]-> llmagent.tuple_space "Starts the :default space"
+    llmagent.agent_runtime.application -[ipc]-> llmagent.discovery_adapters "start_adapter/1 for each :discovery_adapters config entry"
+    llmagent.agent_runtime.memory_ets -[ipc]-> comn "Comn.Repo.Table.ETS"
+
+    operator -[ipc]-> llmagent.agent_runtime.agent "prompt/2"
+    agento -[ipc]-> llmagent.agent_runtime.agent_supervisor "Starts and stops agents from the UI"
+}
+
+views {
+    view component_agent_runtime of llmagent.agent_runtime {
+        title 'Agent Runtime — Components'
+        description 'The agent GenServer and the supervisor, prompt registry and memory backend around it, as started by LLMAgent.Application.start/2.'
+        include *
+    }
+}

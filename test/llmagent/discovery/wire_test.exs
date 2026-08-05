@@ -58,4 +58,34 @@ defmodule LLMAgent.Discovery.WireTest do
     assert decoded.kinds == ad.kinds
     assert decoded.lease == ad.lease
   end
+
+  # `:meta` is where a shim records what it is unsure about — `:extraction
+  # :incomplete`, `:no_shebang true`. A consumer that cannot see those reads a
+  # deliberately-empty `:requires` as a confident "no dependencies", which
+  # inverts the meaning of the field.
+  describe ":meta" do
+    test "decode carries :meta through to the struct" do
+      edn =
+        ~s|{:event :register :ad {:id "x.1" :coordinate "command.local.t" :kinds [:query] :binding [:exec {:argv ["/bin/t"]}] :operational {:actions {}} :constraint {:idempotency {} :blast_radius {}} :affordance {:declared [] :learned [] :open true} :fidelity :speculative :provenance {:source "s" :produced_at "2026-05-07T15:00:00Z" :based_on [] :signature nil} :lease [:expires_at "2026-05-07T15:01:00Z"] :meta {:extraction :incomplete :language "bash" :no_shebang true}}}|
+
+      assert {:ok, {:register, %ToolAd{} = ad}} = Wire.decode(edn)
+      assert ad.meta == %{extraction: :incomplete, language: "bash", no_shebang: true}
+    end
+
+    test "decode defaults :meta to an empty map when the shim omits it" do
+      edn =
+        ~s|{:event :register :ad {:id "x.1" :coordinate "compute.llm.chat" :kinds [:generate] :binding [:openai_chat {:api_host "http://h:8080" :model "m"}] :operational {:actions {}} :constraint {:idempotency {} :blast_radius {}} :affordance {:declared [] :learned [] :open true} :fidelity :authoritative :provenance {:source "s" :produced_at "2026-05-07T15:00:00Z" :based_on [] :signature nil} :lease [:expires_at "2026-05-07T15:01:00Z"]}}|
+
+      assert {:ok, {:register, %ToolAd{} = ad}} = Wire.decode(edn)
+      assert ad.meta == %{}
+    end
+
+    test "encode/decode round-trips a populated :meta, including nested vectors" do
+      ad = %{sample_ad() | meta: %{extraction: :incomplete, based_on: ["a", "b"], depth: 2}}
+
+      {:ok, line} = Wire.encode_register(ad)
+      assert {:ok, {:register, decoded}} = Wire.decode(line)
+      assert decoded.meta == ad.meta
+    end
+  end
 end

@@ -1,0 +1,104 @@
+model {
+    extend llmagent.native_tools {
+
+        tool_bash = component {
+            title 'LLMAgent.Tools.Bash'
+            description 'Executes shell commands. Coordinate function.shell.bash, kind :action, action "exec".'
+            technology 'Elixir Module'
+        }
+
+        tool_crypto = component {
+            title 'LLMAgent.Tools.Crypto'
+            description 'sha256, hmac, generate_key, sign and verify. Coordinate function.crypto, kind :compute.'
+            technology 'Elixir Module'
+        }
+
+        tool_web = component {
+            title 'LLMAgent.Tools.Web'
+            description 'HTTP get and post via Req. Coordinate function.http.'
+            technology 'Elixir Module'
+        }
+
+        tool_dbus = component {
+            title 'LLMAgent.Tools.DBus'
+            description 'list, introspect and call over the system bus via busctl. Coordinate function.dbus.'
+            technology 'Elixir Module'
+        }
+
+        tool_systemd = component {
+            title 'LLMAgent.Tools.Systemd'
+            description 'status, start, stop and related unit operations via systemctl. Coordinate function.systemd.'
+            technology 'Elixir Module'
+        }
+
+        tool_udev = component {
+            title 'LLMAgent.Tools.Udev'
+            description 'list, info and usb device enumeration via udevadm. Coordinate resource.hardware.events.'
+            technology 'Elixir Module'
+        }
+
+        tool_inotify = component {
+            title 'LLMAgent.Tools.Inotify'
+            description 'watch, poll and stop over filesystem events. Coordinate resource.fs.events, kind :stream.'
+            technology 'Elixir Module'
+        }
+
+        inotify_watcher = component {
+            title 'LLMAgent.Tools.Inotify.Watcher'
+            description 'Supervised GenServer that owns the inotify subscriptions and buffers events between poll calls.'
+            technology 'Elixir GenServer'
+        }
+
+        tool_file = component {
+            title 'LLMAgent.Tools.File'
+            description 'Filesystem read, write and delete. Coordinate resource.fs.file, kinds :query and :action.'
+            technology 'Elixir Module'
+        }
+
+        tool_net = component {
+            title 'LLMAgent.Tools.Net'
+            description 'Interface, address and connectivity introspection. Coordinate resource.network, kind :query.'
+            technology 'Elixir Module'
+        }
+
+        tool_proc = component {
+            title 'LLMAgent.Tools.Proc'
+            description 'Process and /proc introspection. Coordinate resource.proc, kind :query.'
+            technology 'Elixir Module'
+        }
+
+        tool_tuple_space = component {
+            title 'LLMAgent.Tools.TupleSpace'
+            description 'JSON-aware adapter over LLMAgent.TupleSpace. Converts JSON arrays to tuples and "_" to the :_ wildcard. Coordinate function.coordination.tuplespace.'
+            technology 'Elixir Module'
+        }
+
+        tool_agent = component {
+            title 'LLMAgent.Tools.Agent'
+            description 'Lifecycle-only child-agent tool: spawn, kill, list, inspect. Carries no payloads; parent and child talk through the tuple space. Coordinate function.agent, kind :spawn.'
+            technology 'Elixir Module'
+        }
+
+        tool_inotify -[ipc]-> inotify_watcher "Delegates watch, poll and stop"
+    }
+
+    llmagent.native_tools.tool_bash -[ipc]-> host_os "Runs commands through the shell"
+    llmagent.native_tools.tool_dbus -[ipc]-> host_os "busctl"
+    llmagent.native_tools.tool_systemd -[ipc]-> host_os "systemctl"
+    llmagent.native_tools.tool_udev -[ipc]-> host_os "udevadm"
+    llmagent.native_tools.inotify_watcher -[ipc]-> host_os "inotify"
+    llmagent.native_tools.tool_file -[ipc]-> host_os "Filesystem"
+    llmagent.native_tools.tool_net -[ipc]-> host_os "Network interfaces"
+    llmagent.native_tools.tool_proc -[ipc]-> host_os "/proc"
+    llmagent.native_tools.tool_web -[http]-> web "Req get and post"
+    llmagent.native_tools.tool_tuple_space -[ipc]-> llmagent.tuple_space "out, in_, rd and the nowait variants"
+    llmagent.native_tools.tool_agent -[ipc]-> llmagent.agent_runtime "AgentSupervisor start and stop"
+}
+
+views {
+    view component_native_tools of llmagent.native_tools {
+        title 'Native Tools — Components'
+        description 'The twelve modules listed in LLMAgent.Tools.Builtins, their coordinates, and the host facilities each drives.'
+        include *
+    }
+}

@@ -33,7 +33,10 @@ defmodule LLMAgent.Discovery.PortAdapter do
   alias LLMAgent.Tools.Discovery, as: Reg
 
   @enforce_keys [:name, :port]
-  defstruct [:name, :port]
+  defstruct [:name, :port, :os_pid]
+
+  # Grace between SIGTERM and SIGKILL when reaping a shim.
+  @term_grace_ms 200
 
   @type opts :: [
           name: atom(),
@@ -66,7 +69,15 @@ defmodule LLMAgent.Discovery.PortAdapter do
       {:env, env}
     ])
 
-    {:ok, %__MODULE__{name: Keyword.fetch!(opts, :name), port: port}}
+    # Recorded at open time: once the port has closed, Port.info/2 returns nil
+    # and the pid needed to signal the child is gone with it.
+    os_pid =
+      case Port.info(port, :os_pid) do
+        {:os_pid, p} -> p
+        nil -> nil
+      end
+
+    {:ok, %__MODULE__{name: Keyword.fetch!(opts, :name), port: port, os_pid: os_pid}}
   end
 
   @impl true
@@ -91,8 +102,14 @@ defmodule LLMAgent.Discovery.PortAdapter do
     try do
       do_handle_line(line, state)
     rescue
-      e ->
-        Logger.warning("PortAdapter #{state.name}: handle_line raised: #{inspect(e)} on line: #{inspect(line)}")
+      # Malformed shim output is expected and must not take the adapter down;
+      # these are the shapes a bad line can produce on the way through the
+      # codec. Anything else is a real defect and is left to crash.
+      e in [ArgumentError, KeyError, MatchError, FunctionClauseError] ->
+        Logger.warning(
+          "PortAdapter #{state.name}: handle_line raised: #{inspect(e)} on line: #{inspect(line)}"
+        )
+
         :ok
     end
   end
@@ -122,11 +139,46 @@ defmodule LLMAgent.Discovery.PortAdapter do
   end
 
   @impl true
-  def terminate(_reason, %{port: port}) do
+  def terminate(_reason, %{port: port, os_pid: os_pid}) do
     if is_port(port) and Port.info(port) != nil do
       Port.close(port)
     end
 
+    reap(os_pid)
     :ok
+  end
+
+  # Closing the port closes the pipes; it does not signal the program. A shim
+  # that does not exit on stdin EOF survives the adapter, keeps scanning, and
+  # keeps holding the stdout it inherited — which hangs whatever is reading
+  # that pipe, `mix test` included. Shims watch stdin for their half of this;
+  # this half covers the ones that do not.
+  @spec reap(non_neg_integer() | nil) :: :ok
+  defp reap(nil), do: :ok
+
+  defp reap(os_pid) do
+    signal(os_pid, "-TERM")
+    Process.sleep(@term_grace_ms)
+
+    if os_alive?(os_pid) do
+      signal(os_pid, "-KILL")
+    end
+
+    :ok
+  end
+
+  defp signal(os_pid, sig) do
+    System.cmd("kill", [sig, Integer.to_string(os_pid)], stderr_to_stdout: true)
+    :ok
+  rescue
+    # `kill` missing from PATH is not worth taking a shutdown down for.
+    ErlangError -> :ok
+  end
+
+  defp os_alive?(os_pid) do
+    {_, status} = System.cmd("kill", ["-0", Integer.to_string(os_pid)], stderr_to_stdout: true)
+    status == 0
+  rescue
+    ErlangError -> false
   end
 end

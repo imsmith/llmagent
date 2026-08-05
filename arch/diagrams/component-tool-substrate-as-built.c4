@@ -1,0 +1,167 @@
+model {
+    extend llmagent.tool_substrate {
+
+        tool_behaviour = component {
+            title 'LLMAgent.Tool'
+            description 'Umbrella behaviour. Optional callbacks ad/0 plus the deprecated describe/0 and perform/2 kept during migration.'
+            technology 'Elixir Behaviour'
+        }
+
+        toolad = component {
+            title 'LLMAgent.ToolAd'
+            description 'The advertisement record: coordinate, kinds, binding tuple, operational / constraint / affordance layers, fidelity, provenance and lease.'
+            technology 'Elixir Struct'
+        }
+
+        toolquery = component {
+            title 'LLMAgent.ToolQuery'
+            description 'Query record and coordinate_matches?/2, supporting a trailing .* glob plus kinds and fidelity_min filtering.'
+            technology 'Elixir Struct'
+        }
+
+        discovery = component {
+            title 'LLMAgent.Tools.Discovery'
+            description 'Named GenServer holding ads in a protected ETS table keyed by ad id. Serves find_one/1 and find_all/1, notifies subscribers, sweeps expired leases, and consumes the :tool_announce tuple space.'
+            technology 'Elixir GenServer + ETS'
+        }
+
+        dispatcher = component {
+            title 'LLMAgent.Tool.Dispatcher'
+            description 'Single entry point for invocation. Resolve coordinate to ad, decide policy, check kind, look up binding adapter, invoke, emit [:llmagent, :tool, kind] telemetry. Also owns the approvals table.'
+            technology 'Elixir Module'
+        }
+
+        policy = component {
+            title 'LLMAgent.Tool.Policy'
+            description 'Per-agent gate with allow, deny, require_approval, fidelity_min and provenance. The empty struct denies everything; intersect/2 composes fail-closed.'
+            technology 'Elixir Struct'
+        }
+
+        kinds = component {
+            title 'LLMAgent.Tool.Kinds'
+            description 'persistent_term registry mapping the seven canonical kind atoms to their behaviour modules; register_kind/2 adds more.'
+            technology 'Elixir Module + :persistent_term'
+        }
+
+        kind_query = component {
+            title 'LLMAgent.Tool.Kinds.Query'
+            description 'Behaviour for read-only interrogation of a resource.'
+            technology 'Elixir Behaviour'
+        }
+
+        kind_action = component {
+            title 'LLMAgent.Tool.Kinds.Action'
+            description 'Behaviour for effectful operations.'
+            technology 'Elixir Behaviour'
+        }
+
+        kind_stream = component {
+            title 'LLMAgent.Tool.Kinds.Stream'
+            description 'Behaviour for open/poll/close style streaming sources.'
+            technology 'Elixir Behaviour'
+        }
+
+        kind_compute = component {
+            title 'LLMAgent.Tool.Kinds.Compute'
+            description 'Behaviour for pure computation over arguments.'
+            technology 'Elixir Behaviour'
+        }
+
+        kind_coordinate = component {
+            title 'LLMAgent.Tool.Kinds.Coordinate'
+            description 'Behaviour for coordination primitives such as the tuple space.'
+            technology 'Elixir Behaviour'
+        }
+
+        kind_spawn = component {
+            title 'LLMAgent.Tool.Kinds.SpawnKind'
+            description 'Behaviour for spawning and terminating child processes or agents.'
+            technology 'Elixir Behaviour'
+        }
+
+        kind_generate = component {
+            title 'LLMAgent.Tool.Kinds.Generate'
+            description 'Behaviour for generative endpoints; the kind carried by discovered LLM chat servers.'
+            technology 'Elixir Behaviour'
+        }
+
+        bindings = component {
+            title 'LLMAgent.Tool.Bindings'
+            description 'persistent_term registry mapping binding-kind atoms to adapter modules. Seeded with :module and :openai_chat.'
+            technology 'Elixir Module + :persistent_term'
+        }
+
+        adapter_behaviour = component {
+            title 'LLMAgent.Tool.Adapter'
+            description 'Behaviour for binding adapters. All callbacks optional; the dispatcher checks function_exported? before calling.'
+            technology 'Elixir Behaviour'
+        }
+
+        adapter_module = component {
+            title 'LLMAgent.Tool.Adapter.Module'
+            description 'Adapter for {:module, Mod} bindings. Straight pass-through to the module implementing the kind behaviour, in the same VM.'
+            technology 'Elixir Module'
+        }
+
+        adapter_openai_chat = component {
+            title 'LLMAgent.Tool.Adapter.OpenAIChat'
+            description 'Adapter bridging the :generate kind to an OpenAI-compatible endpoint. Payload is %{api_host:, model:}; supports the "chat" action only.'
+            technology 'Elixir Module'
+        }
+
+        builtins = component {
+            title 'LLMAgent.Tools.Builtins'
+            description 'Enumeration point listing the twelve built-in tool modules; register_all/0 registers each module ad/0 at boot.'
+            technology 'Elixir Module'
+        }
+
+        tools_registry = component {
+            title 'LLMAgent.Tools'
+            description 'Legacy persistent_term registry of tool atoms to modules (:agent, :bash, :crypto, :dbus, :file, :inotify, :net, :proc, :systemd, :tuple_space, :udev, :web). Also the registration point for MCP tool proxies.'
+            technology 'Elixir Module + :persistent_term'
+        }
+
+        dispatcher -[ipc]-> discovery "find_one/1 to resolve a coordinate to an ad"
+        dispatcher -[ipc]-> policy "decide/4 before any adapter is invoked"
+        dispatcher -[ipc]-> kinds "Verifies the ad declares the requested kind"
+        dispatcher -[ipc]-> bindings "adapter_for/1 on the binding tuple tag"
+        dispatcher -[ipc]-> adapter_behaviour "Invokes the kind-specific callback"
+
+        discovery -[ipc]-> toolad "Stores and ranks ads"
+        discovery -[ipc]-> toolquery "Matches queries against stored ads"
+        policy -[ipc]-> toolquery "Reuses coordinate_matches?/2 for allow and deny rules"
+
+        kinds -[ipc]-> kind_query "Registers :query"
+        kinds -[ipc]-> kind_action "Registers :action"
+        kinds -[ipc]-> kind_stream "Registers :stream"
+        kinds -[ipc]-> kind_compute "Registers :compute"
+        kinds -[ipc]-> kind_coordinate "Registers :coordinate"
+        kinds -[ipc]-> kind_spawn "Registers :spawn"
+        kinds -[ipc]-> kind_generate "Registers :generate"
+
+        bindings -[ipc]-> adapter_module "Registers :module"
+        bindings -[ipc]-> adapter_openai_chat "Registers :openai_chat"
+        adapter_module -[ipc]-> adapter_behaviour "Implements"
+        adapter_openai_chat -[ipc]-> adapter_behaviour "Implements"
+
+        builtins -[ipc]-> discovery "register/1 for each built-in ad at boot"
+        toolad -[ipc]-> tool_behaviour "Returned by the ad/0 callback"
+    }
+
+    llmagent.tool_substrate.builtins -[ipc]-> llmagent.native_tools "Calls ad/0 on each of the twelve built-in modules"
+    llmagent.tool_substrate.adapter_module -[ipc]-> llmagent.native_tools "Delegates kind callbacks to the bound module"
+    llmagent.tool_substrate.adapter_openai_chat -[ipc]-> llmagent.llm_client "Delegates chat to LLMAgent.LLMClient.OpenAI"
+    llmagent.tool_substrate.discovery -[message]-> llmagent.tuple_space "Consumes :tool_announce announcements"
+    llmagent.tool_substrate.dispatcher -[message]-> llmagent.events "Telemetry on every call"
+    llmagent.agent_runtime -[ipc]-> llmagent.tool_substrate.dispatcher "Every tool call from the agent loop"
+    llmagent.discovery_adapters -[ipc]-> llmagent.tool_substrate.discovery "register, update and unregister from shim output"
+    llmagent.mcp_client -[ipc]-> llmagent.tool_substrate.tools_registry "Registers a proxy per remote MCP tool"
+}
+
+views {
+    view component_tool_substrate of llmagent.tool_substrate {
+        title 'Tool Substrate — Components'
+        description 'The ad/query/kind/binding/policy machinery and the dispatch pipeline that joins them, as implemented under lib/llmagent/tool/ and lib/llmagent/tools/.'
+        include *
+    }
+}

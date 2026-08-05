@@ -1,0 +1,91 @@
+specification {
+    element actor {
+        style {
+            shape browser
+            color muted
+        }
+    }
+    element system
+    element container
+    element component
+    relationship ipc
+    relationship message
+    relationship rpc
+    relationship http
+
+    deploymentNode host
+    deploymentNode container_image
+    deploymentNode beam
+}
+
+model {
+    operator = actor {
+        title 'Operator'
+        description 'A person or process driving the agent through LLMAgent.prompt/2 from an IEx session or an embedding application.'
+    }
+
+    agento = system {
+        title 'Agento'
+        description 'Phoenix web frontend in ../agento. Declares {:LLMAgent, path: "../llmagent"} and calls LLMAgent, LLMAgent.AgentSupervisor, LLMAgent.Tools, LLMAgent.Events and LLMAgent.EventBus directly.'
+        technology 'Phoenix / Elixir'
+    }
+
+    comn = system {
+        title 'Comn'
+        description 'Shared substrate library pulled in as a git dep (imsmith/comn v0.4.0). LLMAgent uses Comn.Errors.ErrorStruct, Comn.Events.EventStruct, Comn.Contexts and Comn.Repo.Table.ETS.'
+        technology 'Elixir library'
+    }
+
+    llm_endpoint = system {
+        title 'OpenAI-compatible chat endpoint'
+        description 'External chat-completions server. Default api_host is http://localhost:11434/v1 (Ollama); LAN llama.cpp servers are also reached this way once discovered.'
+        technology 'HTTP / JSON'
+    }
+
+    mcp_server = system {
+        title 'MCP server'
+        description 'Remote Model Context Protocol server. Contacted over Streamable HTTP with JSON-RPC 2.0 by LLMAgent.MCP.Transport.HTTP.'
+        technology 'JSON-RPC 2.0 over HTTP'
+    }
+
+    discovery_shim = system {
+        title 'Discovery shim'
+        description 'External executable spawned as an Erlang port. Configured in config/runtime.exs as tclsh priv/discovery/avahi-llama.tcl; emits one EDN map per line on stdout.'
+        technology 'External process / EDN on stdout'
+    }
+
+    host_os = system {
+        title 'Linux host'
+        description 'The operating system the native tools drive: bash, /proc, ip, busctl, systemctl, udevadm, inotify and the local filesystem.'
+        technology 'Linux userland'
+    }
+
+    web = system {
+        title 'HTTP endpoints'
+        description 'Arbitrary URLs fetched by LLMAgent.Tools.Web via Req.'
+        technology 'HTTP'
+    }
+
+    llmagent = system {
+        title 'LLMAgent'
+        description 'Agent orchestration runtime: supervised agent GenServers, a coordinate-addressed tool substrate with policy-gated dispatch, a Linda tuple space, an MCP client, and an event log.'
+        technology 'Elixir OTP application (:LLMAgent, v0.3.0)'
+    }
+
+    operator -[ipc]-> llmagent "Calls LLMAgent.prompt/2"
+    agento -[ipc]-> llmagent "Embeds as a path dependency; calls the agent, tool and event APIs"
+    llmagent -[ipc]-> comn "Uses errors, events, contexts and ETS table repo"
+    llmagent -[http]-> llm_endpoint "POST {api_host}/chat/completions"
+    llmagent -[rpc]-> mcp_server "initialize, tools/list, tools/call"
+    llmagent -[message]-> discovery_shim "Spawns as a port; reads EDN register/expire lines"
+    llmagent -[ipc]-> host_os "Runs shell, systemd, D-Bus, udev, inotify and filesystem operations"
+    llmagent -[http]-> web "GET / POST via LLMAgent.Tools.Web"
+}
+
+views {
+    view context_llmagent {
+        title 'LLMAgent — System Context'
+        description 'LLMAgent and the actors and external systems it actually talks to, derived from mix.exs deps, config/runtime.exs and the tool modules.'
+        include *
+    }
+}

@@ -1,0 +1,98 @@
+model {
+    extend llmagent {
+
+        agent_runtime = container {
+            title 'Agent Runtime'
+            description 'LLMAgent GenServer plus its DynamicSupervisor, role prompts and memory backend. Holds conversation history, builds the message list and drives the prompt/tool loop.'
+            technology 'Elixir GenServer / DynamicSupervisor'
+        }
+
+        tool_substrate = container {
+            title 'Tool Substrate'
+            description 'Coordinate-addressed tool description and dispatch: ToolAd records, ToolQuery matching, the seven kind behaviours, binding adapters, policy gating and the Discovery registry.'
+            technology 'Elixir behaviours + GenServer + :persistent_term + ETS'
+        }
+
+        native_tools = container {
+            title 'Native Tools'
+            description 'The twelve in-VM tool modules registered at boot by LLMAgent.Tools.Builtins, plus the legacy LLMAgent.Tools persistent_term registry that names them.'
+            technology 'Elixir modules implementing LLMAgent.Tool + kind behaviours'
+        }
+
+        tuple_space = container {
+            title 'Tuple Space'
+            description 'Linda-style coordination: named spaces backed by ETS duplicate_bag tables, blocking and non-blocking out/in/rd, and ETS match-spec pattern compilation.'
+            technology 'Elixir GenServer + ETS + Registry'
+        }
+
+        mcp_client = container {
+            title 'MCP Client'
+            description 'Outbound Model Context Protocol client. One Connection GenServer per server performs the initialize handshake, lists tools, registers them as proxies and forwards tools/call.'
+            technology 'Elixir GenServer + JSON-RPC 2.0'
+        }
+
+        discovery_adapters = container {
+            title 'Discovery Adapters'
+            description 'Supervised Erlang ports wrapping external discovery shims. Each stdout line is decoded from EDN and turned into a register or expire call against the tool registry.'
+            technology 'Elixir GenServer + Erlang Port + EDN'
+        }
+
+        events = container {
+            title 'Events'
+            description 'Emission, in-memory log and DETS-backed durable log for all agent and tool activity, plus a Registry-backed pub/sub bus.'
+            technology 'Elixir Agent / GenServer / Registry / DETS'
+        }
+
+        llm_client = container {
+            title 'LLM Client'
+            description 'Behaviour for chat providers and the single shipped implementation, an OpenAI-compatible chat-completions client over Req.'
+            technology 'Elixir behaviour + Req'
+        }
+
+        utils = container {
+            title 'Utils'
+            description 'Pluggable utility registry (LLMAgent.Utils) over the Encoder, Decoder, RequireBinary and Time modules, all implementing the LLMAgent.Util behaviour.'
+            technology 'Elixir modules + :persistent_term'
+        }
+
+        agent_runtime -[ipc]-> llm_client "Calls chat/2 under Task.Supervisor"
+        agent_runtime -[ipc]-> tool_substrate "Dispatches tool calls through Tool.Dispatcher with a Tool.Policy"
+        agent_runtime -[ipc]-> native_tools "Resolves legacy tool atoms to substrate coordinates"
+        agent_runtime -[message]-> events "Emits agent.prompt, agent.llm_response, agent.tool_dispatch, agent.message, agent.error"
+
+        tool_substrate -[ipc]-> native_tools "Registers each built-in ad; invokes them through the :module binding adapter"
+        tool_substrate -[ipc]-> mcp_client "Holds MCP tool proxies in the tool registry"
+        tool_substrate -[ipc]-> llm_client "The :openai_chat binding adapter delegates :generate to the OpenAI client"
+        tool_substrate -[message]-> tuple_space "Consumes ads announced on the :tool_announce space"
+        tool_substrate -[message]-> events "Emits telemetry and discovery events"
+
+        native_tools -[ipc]-> tuple_space "LLMAgent.Tools.TupleSpace adapts JSON arrays to tuples"
+        native_tools -[ipc]-> agent_runtime "LLMAgent.Tools.Agent spawns, kills and lists child agents"
+        native_tools -[message]-> events "Emits tool.* events"
+
+        discovery_adapters -[ipc]-> tool_substrate "register/1, update/1 and unregister/1 on decoded shim lines"
+
+        mcp_client -[message]-> events "Emits MCP connection and call events"
+    }
+
+    operator -[ipc]-> llmagent.agent_runtime "LLMAgent.prompt/2"
+    agento -[ipc]-> llmagent.agent_runtime "Starts, stops and prompts agents"
+    agento -[ipc]-> llmagent.tool_substrate "Lists tools and endpoint ads"
+    agento -[message]-> llmagent.events "Subscribes to the EventBus and emits web.* events"
+
+    llmagent.llm_client -[http]-> llm_endpoint "POST /chat/completions"
+    llmagent.mcp_client -[rpc]-> mcp_server "JSON-RPC over Streamable HTTP"
+    llmagent.discovery_adapters -[message]-> discovery_shim "Port.open in :line mode; reads EDN"
+    llmagent.native_tools -[ipc]-> host_os "bash, systemctl, busctl, udevadm, inotify, /proc, ip"
+    llmagent.native_tools -[http]-> web "GET and POST via Req"
+    llmagent.events -[ipc]-> comn "Comn.Events.EventStruct and Comn.Contexts enrichment"
+    llmagent.agent_runtime -[ipc]-> comn "Comn.Repo.Table.ETS memory and Comn.Errors.ErrorStruct"
+}
+
+views {
+    view container_llmagent of llmagent {
+        title 'LLMAgent — Containers'
+        description 'The nine module groupings that make up the OTP application, matching the children started in LLMAgent.Application.start/2.'
+        include *
+    }
+}

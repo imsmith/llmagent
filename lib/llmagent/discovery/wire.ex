@@ -114,7 +114,12 @@ defmodule LLMAgent.Discovery.Wire do
           affordance: m |> Map.fetch!(:affordance) |> decode_affordance(),
           fidelity: Map.fetch!(m, :fidelity),
           provenance: m |> Map.fetch!(:provenance) |> decode_provenance(),
-          lease: m |> Map.fetch!(:lease) |> decode_lease()
+          lease: m |> Map.fetch!(:lease) |> decode_lease(),
+          # Optional: shims that have nothing to qualify omit it entirely.
+          # `:meta` carries the shim's honesty signals — `:extraction
+          # :incomplete`, `:no_shebang true`. Dropping them lets a consumer read
+          # a deliberately-empty `:requires` as a confident "no dependencies".
+          meta: m |> Map.get(:meta, %{}) |> normalise_map()
         })
 
       {:ok, ad}
@@ -174,6 +179,8 @@ defmodule LLMAgent.Discovery.Wire do
   @spec normalise_value(term()) :: term()
   defp normalise_value(%Array{} = arr), do: arr |> Enum.to_list() |> Enum.map(&normalise_value/1)
   defp normalise_value(m) when is_map(m), do: normalise_map(m)
+  # EDN lists decode to plain lists; their elements still need walking.
+  defp normalise_value(l) when is_list(l), do: Enum.map(l, &normalise_value/1)
   defp normalise_value(other), do: other
 
   # Convert Array or list to plain Elixir list.
@@ -197,7 +204,8 @@ defmodule LLMAgent.Discovery.Wire do
       affordance: encode_affordance(ad.affordance),
       fidelity: ad.fidelity,
       provenance: encode_provenance(ad.provenance),
-      lease: encode_lease(ad.lease)
+      lease: encode_lease(ad.lease),
+      meta: ad.meta
     }
   end
 

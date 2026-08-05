@@ -1,0 +1,66 @@
+model {
+    extend llmagent.mcp_client {
+
+        mcp_facade = component {
+            title 'LLMAgent.MCP'
+            description 'Process-free facade. connect/2 and disconnect/1 delegate to the ConnectionSupervisor; lookups go through LLMAgent.MCP.Registry and the :llmagent_mcp_tool_map side map.'
+            technology 'Elixir Module'
+        }
+
+        connection_supervisor = component {
+            title 'LLMAgent.MCP.ConnectionSupervisor'
+            description 'DynamicSupervisor owning one Connection per configured MCP server.'
+            technology 'Elixir DynamicSupervisor'
+        }
+
+        mcp_registry = component {
+            title 'LLMAgent.MCP.Registry'
+            description 'Unique-key Registry mapping server names to Connection pids.'
+            technology 'Elixir Registry'
+        }
+
+        connection = component {
+            title 'LLMAgent.MCP.Connection'
+            description 'GenServer for one server. Performs the initialize handshake, discovers tools via tools/list, registers them into the tool registry and proxies tools/call.'
+            technology 'Elixir GenServer'
+        }
+
+        tool_proxy = component {
+            title 'LLMAgent.MCP.ToolProxy'
+            description 'Implements the LLMAgent.Tool behaviour on behalf of every remote MCP tool; resolves connection and remote tool name from :llmagent_mcp_tool_map.'
+            technology 'Elixir Module'
+        }
+
+        transport_behaviour = component {
+            title 'LLMAgent.MCP.Transport'
+            description 'Behaviour for transports: start/1, send_request/2 and close. Holds opaque per-transport state on behalf of the Connection.'
+            technology 'Elixir Behaviour'
+        }
+
+        transport_http = component {
+            title 'LLMAgent.MCP.Transport.HTTP'
+            description 'Streamable HTTP transport. Posts JSON-RPC 2.0 to the server URL using Req. Stateless — no persistent connection.'
+            technology 'Elixir Module + Req'
+        }
+
+        mcp_facade -[ipc]-> connection_supervisor "start_child / terminate_child"
+        mcp_facade -[ipc]-> mcp_registry "Resolves a server name to a pid"
+        connection_supervisor -[ipc]-> connection "Supervises"
+        connection -[ipc]-> mcp_registry "Registers under its server name"
+        connection -[ipc]-> transport_behaviour "send_request/2"
+        transport_http -[ipc]-> transport_behaviour "Implements"
+        tool_proxy -[ipc]-> connection "Forwards tools/call"
+    }
+
+    llmagent.mcp_client.connection -[ipc]-> llmagent.tool_substrate "Registers a ToolProxy entry per discovered remote tool"
+    llmagent.mcp_client.connection -[message]-> llmagent.events "Emits connection and call events"
+    llmagent.mcp_client.transport_http -[rpc]-> mcp_server "POST JSON-RPC 2.0"
+}
+
+views {
+    view component_mcp_client of llmagent.mcp_client {
+        title 'MCP Client — Components'
+        description 'Facade, supervisor, registry, per-server connection, tool proxy and the single HTTP transport implemented under lib/llmagent/mcp/.'
+        include *
+    }
+}
