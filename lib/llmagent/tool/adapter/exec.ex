@@ -15,6 +15,26 @@ defmodule LLMAgent.Tool.Adapter.Exec do
   anything. There is no safe way to probe these tools, which is why the guards
   in `act/5` refuse rather than experiment.
 
+  ## Idempotency
+
+  `act/5` accepts `idempotency_key` and ignores it. These commands have no
+  idempotency mechanism, and honouring the parameter would be a claim this
+  adapter cannot keep. It is documented here rather than silently dropped.
+
+  ## Process ownership
+
+  The port is opened inside a process this module spawns, never in the caller's
+  process. Two properties follow, and both matter because timeouts are the
+  expected outcome for a large part of this tool population:
+
+    * The dying child's final `{port, {:data, _}}` and `{port, {:exit_status,
+      _}}` messages land in the runner's mailbox and die with it. A GenServer
+      caller — `LLMAgent` has no catch-all `handle_info/2` — never sees stray
+      port mail after a timeout.
+    * The runner monitors its caller. If the caller dies while output
+      collection is blocked, the runner reaps the OS process rather than
+      leaving it running and holding the stdout it inherited.
+
   See `docs/superpowers/specs/2026-08-05-exec-binding-adapter-design.md`.
   """
 
@@ -29,17 +49,15 @@ defmodule LLMAgent.Tool.Adapter.Exec do
     {:error, {:unknown_action, action}}
   end
 
-  # `idempotency_key` is accepted and ignored: these commands have no
-  # idempotency mechanism, and honouring the parameter would be a claim this
-  # adapter cannot keep.
+  # `idempotency_key` is accepted and ignored — see the moduledoc.
   def act(payload, "run", args, _idempotency_key, opts) do
     ad = Keyword.fetch!(opts, :ad)
     argv = Map.get(args, "args", [])
 
     with :ok <- check_arity(ad, argv),
          :ok <- check_blast_radius(ad, opts),
-         :ok <- check_extraction(ad, opts) do
-      {exe, full_argv} = resolve_exe(payload, ad, argv)
+         :ok <- check_extraction(ad, opts),
+         {:ok, exe, full_argv} <- resolve_exe(payload, ad, argv) do
       run(exe, full_argv, opts)
     end
   end
@@ -54,7 +72,7 @@ defmodule LLMAgent.Tool.Adapter.Exec do
   # (a malformed `args["args"]`) refuses instead of raising in `length/1`.
   defp check_arity(ad, argv) when is_list(argv) do
     with %{actions: %{"run" => %{arity: arity, variadic: variadic}}} <- ad.operational,
-         true <- is_integer(arity) and is_boolean(variadic) do
+         true <- is_integer(arity) and arity >= 0 and is_boolean(variadic) do
       got = length(argv)
 
       cond do
@@ -121,36 +139,92 @@ defmodule LLMAgent.Tool.Adapter.Exec do
   defp normalise_signal(value) when is_atom(value), do: value
   defp normalise_signal(_value), do: :unknown
 
+  # The *whole* argv from the binding is the command prefix; caller arguments
+  # are appended after it. Keeping only the head would turn an ordinary
+  # `argv: ["/usr/bin/env", "myscript"]` ad into "run /usr/bin/env with
+  # model-controlled arguments" — arbitrary execution wearing one script's
+  # coordinate.
+  #
   # A file with no shebang cannot be exec'd by the kernel. Running it as an
-  # argument to sh is still an argv exec, not a shell command string.
-  defp resolve_exe(payload, ad, argv) do
-    path = payload |> Map.fetch!(:argv) |> List.first()
+  # argument to sh is still an argv exec, not a shell command string; `--`
+  # stops sh reading a path that begins with `-` as an option, which is the
+  # only route to a shell anywhere in this module.
+  #
+  # A payload without a binary argv head refuses, like every other malformed
+  # input here, rather than raising out through the dispatcher.
+  defp resolve_exe(%{argv: [path | rest]}, ad, argv) when is_binary(path) do
+    prefix = rest ++ argv
 
-    if Map.get(ad.meta || %{}, :no_shebang) do
-      {System.find_executable("sh"), [path | argv]}
+    if no_shebang?(ad) do
+      {:ok, System.find_executable("sh"), ["--", path | prefix]}
     else
-      {path, argv}
+      {:ok, path, prefix}
     end
   end
 
+  defp resolve_exe(_payload, _ad, _argv), do: {:error, {:refused, :binding, :malformed}}
+
+  # Allowlist, same shape as `check_extraction/2`: only a literal `true` in a
+  # map `meta` selects the sh path. A `nil`, a non-map `meta` (a `{:ref, coord}`
+  # tuple) and any other value read as "no".
+  defp no_shebang?(%{meta: %{no_shebang: true}}), do: true
+  defp no_shebang?(_ad), do: false
+
+  # The port is opened in a process this module spawns, not in the caller's.
+  # See the moduledoc: stray port mail after a timeout dies with the runner
+  # instead of reaching a GenServer with no catch-all `handle_info/2`, and a
+  # caller that dies mid-collection still gets its OS process reaped.
+  #
+  # The runner bounds its own runtime (the collect deadline plus the reap
+  # grace) and reports the timeout itself, so the caller waits without a
+  # competing timeout of its own.
   defp run(exe, argv, opts) do
-    started = System.monotonic_time(:millisecond)
+    caller = self()
 
     port_opts =
       [:binary, :exit_status, :stderr_to_stdout, {:args, argv}] ++
         cd_opt(opts) ++ env_opt(opts)
 
-    port = Port.open({:spawn_executable, exe}, port_opts)
-
-    os_pid =
-      case Port.info(port, :os_pid) do
-        {:os_pid, p} -> p
-        nil -> nil
-      end
-
     total_timeout = timeout(opts)
-    deadline = started + total_timeout
-    collect(port, os_pid, total_timeout, deadline, [], 0, started)
+
+    {runner, mon} =
+      spawn_monitor(fn ->
+        caller_ref = Process.monitor(caller)
+        send(caller, {:exec_result, self(), owned_run(exe, port_opts, total_timeout, caller_ref)})
+      end)
+
+    receive do
+      {:exec_result, ^runner, result} ->
+        Process.demonitor(mon, [:flush])
+        result
+
+      {:DOWN, ^mon, :process, ^runner, reason} ->
+        {:error, {:runner_exited, reason}}
+    end
+  end
+
+  defp owned_run(exe, port_opts, total_timeout, caller_ref) do
+    started = System.monotonic_time(:millisecond)
+
+    case open_port(exe, port_opts) do
+      {:ok, port} ->
+        os_pid =
+          case Port.info(port, :os_pid) do
+            {:os_pid, p} -> p
+            nil -> nil
+          end
+
+        collect(port, os_pid, total_timeout, started + total_timeout, [], 0, started, caller_ref)
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  # Narrow: only the spawn itself. A rescue spanning collection would report a
+  # later failure as `:spawn_failed` and leak both the port and the OS process.
+  defp open_port(exe, port_opts) do
+    {:ok, Port.open({:spawn_executable, exe}, port_opts)}
   rescue
     e in ErlangError -> {:error, {:spawn_failed, e}}
     e in ArgumentError -> {:error, {:spawn_failed, e}}
@@ -162,13 +236,13 @@ defmodule LLMAgent.Tool.Adapter.Exec do
   # progress bar, `pv`, any of the "dd | pv | sudo dd" tools this module's
   # moduledoc warns about) still gets killed on schedule instead of resetting
   # the clock on every chunk.
-  defp collect(port, os_pid, total_timeout, deadline, acc, size, started) do
+  defp collect(port, os_pid, total_timeout, deadline, acc, size, started, caller_ref) do
     remaining = max(deadline - System.monotonic_time(:millisecond), 0)
 
     receive do
       {^port, {:data, chunk}} ->
         {acc, size} = accumulate(acc, size, chunk)
-        collect(port, os_pid, total_timeout, deadline, acc, size, started)
+        collect(port, os_pid, total_timeout, deadline, acc, size, started, caller_ref)
 
       {^port, {:exit_status, status}} ->
         output = finish(acc)
@@ -183,6 +257,13 @@ defmodule LLMAgent.Tool.Adapter.Exec do
         else
           {:error, {:exit_status, status, output}}
         end
+
+      # Nobody is left to receive the result. Reap rather than run to the
+      # deadline holding the caller's inherited stdout.
+      {:DOWN, ^caller_ref, :process, _pid, _reason} ->
+        LLMAgent.OSProcess.reap(os_pid)
+        safe_close(port)
+        {:error, :caller_gone}
     after
       remaining ->
         LLMAgent.OSProcess.reap(os_pid)

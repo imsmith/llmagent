@@ -147,6 +147,86 @@ defmodule LLMAgent.Tool.Adapter.ExecTest do
            "chatty.sh OS process(es) survived the exec timeout"
   end
 
+  # The port must not be opened in the caller's process. On a timeout the
+  # dying child's remaining {port, {:data, _}} chunks and its
+  # {port, {:exit_status, 143}} are delivered *after* collection gives up; if
+  # the caller owned the port they would sit unmatched in its mailbox. The
+  # intended consumer is a GenServer, and `LLMAgent`'s `handle_info/2` has no
+  # catch-all clause, so one such message is a FunctionClauseError and a dead
+  # agent. ExUnit test processes tolerate stray mail silently, which is why
+  # this has to be asserted rather than observed.
+  test "a timeout leaves no stray port messages in the caller's mailbox", %{dir: dir} do
+    path = fixture(dir, "noisy.sh", "#!/bin/bash\nwhile true; do echo tick; sleep 0.02; done\n")
+
+    assert {:error, {:timeout, 300, _output}} = call(path, %{}, exec_timeout: 300)
+
+    # Well past reap's 200 ms grace, so anything the child emitted on its way
+    # out has had time to be delivered.
+    Process.sleep(500)
+
+    assert drain_mailbox() == [],
+           "exec left messages in the calling process's mailbox after a timeout"
+  end
+
+  test "the mailbox is also clean after a successful run", %{dir: dir} do
+    path = fixture(dir, "ok.sh", "#!/bin/bash\necho done\n")
+    assert {:ok, _output, _meta} = call(path, %{})
+    Process.sleep(100)
+    assert drain_mailbox() == []
+  end
+
+  # If the caller dies while output collection is blocked, nothing in the BEAM
+  # signals the OS process: Port.close/1 closes pipes, it does not kill. The
+  # child survives holding the stdout it inherited — the failure OSProcess's
+  # moduledoc exists to describe.
+  test "a caller that dies mid-run does not orphan the OS process", %{dir: dir} do
+    path = fixture(dir, "orphan.sh", "#!/bin/bash\necho $$ > #{dir}/pidfile\nsleep 60\n")
+    ad = ad_for(path)
+    payload = %{argv: [path], interpreter: "bash"}
+
+    {caller, ref} =
+      spawn_monitor(fn ->
+        Exec.act(payload, "run", %{}, nil, ad: ad, exec_timeout: 30_000)
+      end)
+
+    os_pid = await_pidfile(Path.join(dir, "pidfile"))
+    Process.exit(caller, :kill)
+    assert_receive {:DOWN, ^ref, :process, ^caller, :killed}, 1_000
+
+    assert await_death(os_pid),
+           "orphan.sh OS process #{os_pid} outlived the process that started it"
+  end
+
+  defp drain_mailbox(acc \\ []) do
+    receive do
+      msg -> drain_mailbox([msg | acc])
+    after
+      0 -> Enum.reverse(acc)
+    end
+  end
+
+  defp await_pidfile(path, deadline_ms \\ 5_000) do
+    case File.read(path) do
+      {:ok, contents} ->
+        case contents |> String.trim() |> Integer.parse() do
+          {pid, _} -> pid
+          :error -> retry_pidfile(path, deadline_ms)
+        end
+
+      {:error, _} ->
+        retry_pidfile(path, deadline_ms)
+    end
+  end
+
+  defp retry_pidfile(path, deadline_ms) do
+    if deadline_ms <= 0 do
+      flunk("fixture never wrote #{path}")
+    else
+      Process.sleep(50)
+      await_pidfile(path, deadline_ms - 50)
+    end
+  end
+
   test "an unknown action is refused", %{dir: dir} do
     path = fixture(dir, "hello.sh", "#!/bin/bash\necho hello\n")
     payload = %{argv: [path], interpreter: "bash"}
@@ -321,6 +401,56 @@ defmodule LLMAgent.Tool.Adapter.ExecTest do
       path = fixture(dir, "refconstraint.sh", "#!/bin/bash\necho ran\n")
       ad = %{ad_for(path) | constraint: {:ref, "some.coord"}}
       assert {:error, {:refused, :blast_radius, :unknown}} = call(path, %{}, [], ad)
+    end
+
+    # Keeping only List.first(argv) would turn this into "run the interpreter
+    # with model-controlled arguments" — arbitrary execution wearing one
+    # script's coordinate.
+    test "the whole binding argv is the command prefix, not just its head", %{dir: dir} do
+      script = fixture(dir, "prefixed.sh", "#!/bin/bash\nprintf '%s|' \"$@\"\n")
+      env = System.find_executable("env")
+
+      ad = %{ad_for(script) | binding: {:exec, %{argv: [env, script], interpreter: "bash"}}}
+      payload = %{argv: [env, script], interpreter: "bash"}
+
+      assert {:ok, output, _meta} =
+               Exec.act(payload, "run", %{"args" => ["a", "b"]}, nil, ad: ad)
+
+      assert output == "a|b|"
+    end
+
+    test "a payload with no argv is refused, not raised", %{dir: dir} do
+      path = fixture(dir, "noargv.sh", "#!/bin/bash\necho ran\n")
+
+      assert {:error, {:refused, :binding, :malformed}} =
+               Exec.act(%{interpreter: "bash"}, "run", %{}, nil, ad: ad_for(path))
+    end
+
+    test "a payload with an empty or non-binary argv head is refused", %{dir: dir} do
+      path = fixture(dir, "badargv.sh", "#!/bin/bash\necho ran\n")
+      ad = ad_for(path)
+
+      assert {:error, {:refused, :binding, :malformed}} =
+               Exec.act(%{argv: [], interpreter: "bash"}, "run", %{}, nil, ad: ad)
+
+      assert {:error, {:refused, :binding, :malformed}} =
+               Exec.act(%{argv: [:not_a_path], interpreter: "bash"}, "run", %{}, nil, ad: ad)
+    end
+
+    # sh would otherwise read a path beginning with `-` as an option, and
+    # `sh -c <args>` is the one place in this module a shell is reachable.
+    test "the no-shebang path passes -- before a dash-leading script name", %{dir: dir} do
+      canary = Path.join(dir, "pwned")
+      fixture(dir, "-c", "printf '%s' \"$1\"\n")
+
+      # A *relative* argv head, so the leading `-` actually reaches sh as
+      # something that looks like an option.
+      ad = %{ad_for("-c") | meta: %{extraction: :complete, no_shebang: true}}
+      payload = %{argv: ["-c"], interpreter: "sh"}
+
+      Exec.act(payload, "run", %{"args" => ["touch #{canary}"]}, nil, ad: ad, exec_cd: dir)
+
+      refute File.exists?(canary), "sh interpreted the argument as shell input"
     end
 
     test "arity is checked before blast radius", %{dir: dir} do
