@@ -31,12 +31,13 @@ defmodule LLMAgent.Discovery.Wire do
   {:event :expire :id "..."}
   ```
 
-  ## Eden type notes
+  ## EDN type notes
 
   - EDN keywords (`:foo`) decode to Elixir atoms.
-  - EDN vectors (`[...]`) decode to `Array` structs; the codec converts them
-    to Elixir lists on the way in and back to `Array` structs on the way out.
-  - Elixir tuples cannot be encoded by Eden — use `Array.from_list/1` to
+  - EDN vectors (`[...]`) decode to `EDN.Vector` structs; the codec converts
+    them to Elixir lists on the way in and back to `EDN.Vector` structs on the
+    way out.
+  - Elixir tuples cannot be encoded by `EDN` — use `EDN.Vector.from_list/1` to
     produce EDN vectors for `:binding` and `:lease`.
   - `nil` encodes/decodes as EDN `nil`.
 
@@ -55,7 +56,7 @@ defmodule LLMAgent.Discovery.Wire do
   """
   @spec decode(binary()) :: {:ok, event()} | {:error, term()}
   def decode(line) when is_binary(line) do
-    case Eden.decode(line) do
+    case EDN.decode(line) do
       {:ok, decoded} -> classify(decoded)
       {:error, _} = err -> err
     end
@@ -69,7 +70,7 @@ defmodule LLMAgent.Discovery.Wire do
   """
   @spec encode_register(ToolAd.t()) :: {:ok, binary()} | {:error, term()}
   def encode_register(%ToolAd{} = ad) do
-    Eden.encode(%{event: :register, ad: ad_to_map(ad)})
+    EDN.encode(%{event: :register, ad: ad_to_map(ad)})
   end
 
   # ---------------------------------------------------------------------------
@@ -131,7 +132,7 @@ defmodule LLMAgent.Discovery.Wire do
   defp to_ad(_), do: {:error, :bad_ad}
 
   # EDN vector `[:openai_chat {...}]` → `{:openai_chat, map}`
-  @spec decode_binding(Array.t() | list()) :: {atom(), map()}
+  @spec decode_binding(EDN.Vector.t() | list()) :: {atom(), map()}
   defp decode_binding(v) do
     [kind, payload] = array_to_list(v)
     {kind, normalise_map(payload)}
@@ -139,7 +140,7 @@ defmodule LLMAgent.Discovery.Wire do
 
   # EDN vector `[:expires_at "ISO8601"]` → `{:expires_at, DateTime.t()}`
   # or the atom `:permanent`
-  @spec decode_lease(Array.t() | list() | atom()) ::
+  @spec decode_lease(EDN.Vector.t() | list() | atom()) ::
           :permanent | {:expires_at, DateTime.t()}
   defp decode_lease(:permanent), do: :permanent
 
@@ -167,7 +168,7 @@ defmodule LLMAgent.Discovery.Wire do
     |> Map.update!(:learned, &array_to_list/1)
   end
 
-  # Recursively walk a decoded map; converts any nested Array values to lists.
+  # Recursively walk a decoded map; converts any nested EDN.Vector values to lists.
   # Leaves non-map leaf values untouched.
   @spec normalise_map(map() | term()) :: map() | term()
   defp normalise_map(m) when is_map(m) do
@@ -177,19 +178,19 @@ defmodule LLMAgent.Discovery.Wire do
   defp normalise_map(other), do: other
 
   @spec normalise_value(term()) :: term()
-  defp normalise_value(%Array{} = arr), do: arr |> Enum.to_list() |> Enum.map(&normalise_value/1)
+  defp normalise_value(%EDN.Vector{} = arr), do: arr |> Enum.to_list() |> Enum.map(&normalise_value/1)
   defp normalise_value(m) when is_map(m), do: normalise_map(m)
   # EDN lists decode to plain lists; their elements still need walking.
   defp normalise_value(l) when is_list(l), do: Enum.map(l, &normalise_value/1)
   defp normalise_value(other), do: other
 
-  # Convert Array or list to plain Elixir list.
-  @spec array_to_list(Array.t() | list()) :: list()
-  defp array_to_list(%Array{} = arr), do: Enum.to_list(arr)
+  # Convert EDN.Vector or list to plain Elixir list.
+  @spec array_to_list(EDN.Vector.t() | list()) :: list()
+  defp array_to_list(%EDN.Vector{} = arr), do: Enum.to_list(arr)
   defp array_to_list(list) when is_list(list), do: list
 
   # ---------------------------------------------------------------------------
-  # Private — encode: %ToolAd{} → plain map safe for Eden.encode/1
+  # Private — encode: %ToolAd{} → plain map safe for EDN.encode/1
   # ---------------------------------------------------------------------------
 
   @spec ad_to_map(ToolAd.t()) :: map()
@@ -197,7 +198,7 @@ defmodule LLMAgent.Discovery.Wire do
     %{
       id: ad.id,
       coordinate: ad.coordinate,
-      kinds: Array.from_list(ad.kinds),
+      kinds: EDN.Vector.from_list(ad.kinds),
       binding: encode_binding(ad.binding),
       operational: ad.operational,
       constraint: ad.constraint,
@@ -209,20 +210,20 @@ defmodule LLMAgent.Discovery.Wire do
     }
   end
 
-  # `{:openai_chat, map}` → `Array` of `[:openai_chat, map]`
-  @spec encode_binding({atom(), map()} | nil) :: Array.t() | nil
+  # `{:openai_chat, map}` → `EDN.Vector` of `[:openai_chat, map]`
+  @spec encode_binding({atom(), map()} | nil) :: EDN.Vector.t() | nil
   defp encode_binding(nil), do: nil
 
   defp encode_binding({kind, payload}) do
-    Array.from_list([kind, payload])
+    EDN.Vector.from_list([kind, payload])
   end
 
-  # `{:expires_at, DateTime.t()}` → `Array` of `[:expires_at, "ISO8601"]`
-  @spec encode_lease(:permanent | {:expires_at, DateTime.t()}) :: atom() | Array.t()
+  # `{:expires_at, DateTime.t()}` → `EDN.Vector` of `[:expires_at, "ISO8601"]`
+  @spec encode_lease(:permanent | {:expires_at, DateTime.t()}) :: atom() | EDN.Vector.t()
   defp encode_lease(:permanent), do: :permanent
 
   defp encode_lease({:expires_at, %DateTime{} = dt}) do
-    Array.from_list([:expires_at, DateTime.to_iso8601(dt)])
+    EDN.Vector.from_list([:expires_at, DateTime.to_iso8601(dt)])
   end
 
   # `%{produced_at: DateTime.t(), ...}` → `%{produced_at: "ISO8601", ...}`
@@ -231,11 +232,11 @@ defmodule LLMAgent.Discovery.Wire do
     Map.update!(p, :produced_at, &DateTime.to_iso8601/1)
   end
 
-  # `%{declared: [...], learned: [...], ...}` → same with Array vectors
+  # `%{declared: [...], learned: [...], ...}` → same with EDN.Vector vectors
   @spec encode_affordance(map()) :: map()
   defp encode_affordance(a) when is_map(a) do
     a
-    |> Map.update!(:declared, &Array.from_list/1)
-    |> Map.update!(:learned, &Array.from_list/1)
+    |> Map.update!(:declared, &EDN.Vector.from_list/1)
+    |> Map.update!(:learned, &EDN.Vector.from_list/1)
   end
 end

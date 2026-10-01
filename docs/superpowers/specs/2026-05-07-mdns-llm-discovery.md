@@ -28,7 +28,7 @@ The six canonical kinds (`:query`, `:action`, `:stream`, `:compute`, `:coordinat
 |---|---|---|
 | Tcl shim | `priv/discovery/avahi-llama.tcl` | Wraps `avahi-browse`, maintains name→id table, emits EDN events |
 | Port adapter | `lib/llmagent/discovery/port_adapter.ex` | Supervises shim, parses EDN, calls Discovery |
-| EDN codec | `lib/llmagent/discovery/wire.ex` | Encode/decode the ad wire schema (using `eden`) |
+| EDN codec | `lib/llmagent/discovery/wire.ex` | Encode/decode the ad wire schema (using `ex_edn`) |
 | Generate kind | `lib/llmagent/tool/kinds/generate.ex` | Behaviour module for stochastic completion |
 | OpenAI-chat adapter | `lib/llmagent/tool/adapter/openai_chat.ex` | Binding adapter implementing `:generate` via `LLMClient.OpenAI` |
 | App wiring | `lib/llmagent/application.ex` | DynamicSupervisor + child specs from config |
