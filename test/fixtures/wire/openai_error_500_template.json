@@ -1,0 +1,1 @@
+{"error":{"code":500,"message":"\n------------\nWhile executing CallExpression at line 1, column 397 in source:\n... eos_token}}{% else %}{{ raise_exception('Only user and assistant roles are supp...\n                                           ^\nError: Jinja Exception: Only user and assistant roles are supported!","type":"server_error"}}

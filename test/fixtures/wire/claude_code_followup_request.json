@@ -1,0 +1,538 @@
+{
+ "model": "claude-sonnet-5-5",
+ "messages": [
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "<scrubbed 5518 chars>"
+    },
+    {
+     "type": "text",
+     "text": "<scrubbed 6 chars>"
+    }
+   ]
+  },
+  {
+   "role": "system",
+   "content": "<scrubbed 40954 chars>",
+   "output_config": {
+    "effort": "medium"
+   }
+  },
+  {
+   "role": "assistant",
+   "content": [
+    {
+     "type": "thinking",
+     "thinking": "<scrubbed 195 chars>",
+     "signature": ""
+    },
+    {
+     "type": "tool_use",
+     "id": "ac0kzqCJq28B8r7hmnGl6ddHfbaiBa9Q",
+     "name": "get_weather",
+     "input": {
+      "city": "Paris"
+     },
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    }
+   ]
+  },
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "tool_result",
+     "content": "<scrubbed 75 chars>",
+     "is_error": true,
+     "tool_use_id": "ac0kzqCJq28B8r7hmnGl6ddHfbaiBa9Q"
+    }
+   ]
+  },
+  {
+   "role": "system",
+   "content": [
+    {
+     "type": "text",
+     "text": "<scrubbed 49 chars>",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    }
+   ]
+  }
+ ],
+ "system": [
+  {
+   "type": "text",
+   "text": "<scrubbed 73 chars>"
+  },
+  {
+   "type": "text",
+   "text": "<scrubbed 62 chars>",
+   "cache_control": {
+    "type": "ephemeral"
+   }
+  },
+  {
+   "type": "text",
+   "text": "<scrubbed 6017 chars>",
+   "cache_control": {
+    "type": "ephemeral"
+   }
+  }
+ ],
+ "tools": [
+  {
+   "name": "Agent",
+   "description": "<scrubbed 1668 chars>",
+   "input_schema": {
+    "$schema": "<scrubbed 44 chars>",
+    "type": "object",
+    "properties": {
+     "description": {
+      "description": "<scrubbed 42 chars>",
+      "type": "string"
+     },
+     "prompt": {
+      "description": "<scrubbed 33 chars>",
+      "type": "string"
+     },
+     "subagent_type": {
+      "description": "<scrubbed 50 chars>",
+      "type": "string"
+     },
+     "model": {
+      "description": "<scrubbed 358 chars>",
+      "type": "string",
+      "enum": [
+       "sonnet",
+       "opus",
+       "haiku",
+       "fable"
+      ]
+     },
+     "run_in_background": {
+      "description": "<scrubbed 286 chars>",
+      "type": "boolean"
+     },
+     "name": {
+      "description": "<scrubbed 91 chars>",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+     },
+     "team_name": {
+      "description": "<scrubbed 60 chars>",
+      "type": "string"
+     },
+     "mode": {
+      "description": "<scrubbed 122 chars>",
+      "type": "string",
+      "enum": [
+       "acceptEdits",
+       "auto",
+       "bypassPermissions",
+       "default",
+       "dontAsk",
+       "plan"
+      ]
+     },
+     "isolation": {
+      "description": "<scrubbed 221 chars>",
+      "type": "string",
+      "enum": [
+       "worktree",
+       "remote"
+      ]
+     }
+    },
+    "required": [
+     "description",
+     "prompt"
+    ],
+    "additionalProperties": false
+   }
+  },
+  {
+   "name": "Bash",
+   "description": "<scrubbed 1493 chars>",
+   "input_schema": {
+    "$schema": "<scrubbed 44 chars>",
+    "type": "object",
+    "properties": {
+     "command": {
+      "description": "<scrubbed 22 chars>",
+      "type": "string"
+     },
+     "timeout": {
+      "description": "<scrubbed 70 chars>",
+      "type": "number"
+     },
+     "description": {
+      "description": "<scrubbed 926 chars>",
+      "type": "string"
+     },
+     "run_in_background": {
+      "description": "<scrubbed 182 chars>",
+      "type": "boolean"
+     },
+     "dangerouslyDisableSandbox": {
+      "description": "<scrubbed 90 chars>",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "command"
+    ],
+    "additionalProperties": false
+   }
+  },
+  {
+   "name": "Edit",
+   "description": "<scrubbed 360 chars>",
+   "input_schema": {
+    "$schema": "<scrubbed 44 chars>",
+    "type": "object",
+    "properties": {
+     "file_path": {
+      "description": "<scrubbed 39 chars>",
+      "type": "string"
+     },
+     "old_string": {
+      "description": "<scrubbed 19 chars>",
+      "type": "string"
+     },
+     "new_string": {
+      "description": "<scrubbed 63 chars>",
+      "type": "string"
+     },
+     "replace_all": {
+      "description": "<scrubbed 53 chars>",
+      "default": false,
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "file_path",
+     "old_string",
+     "new_string"
+    ],
+    "additionalProperties": false
+   }
+  },
+  {
+   "name": "ListAgents",
+   "description": "<scrubbed 777 chars>",
+   "input_schema": {
+    "$schema": "<scrubbed 44 chars>",
+    "type": "object",
+    "properties": {
+     "channel": {
+      "description": "<scrubbed 41 chars>",
+      "type": "string",
+      "maxLength": 256
+     },
+     "q": {
+      "description": "<scrubbed 41 chars>",
+      "type": "string",
+      "maxLength": 256
+     }
+    },
+    "additionalProperties": false
+   }
+  },
+  {
+   "name": "Read",
+   "description": "<scrubbed 790 chars>",
+   "input_schema": {
+    "$schema": "<scrubbed 44 chars>",
+    "type": "object",
+    "properties": {
+     "file_path": {
+      "description": "<scrubbed 37 chars>",
+      "type": "string"
+     },
+     "offset": {
+      "description": "<scrubbed 92 chars>",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "limit": {
+      "description": "<scrubbed 83 chars>",
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "pages": {
+      "description": "<scrubbed 113 chars>",
+      "type": "string"
+     }
+    },
+    "required": [
+     "file_path"
+    ],
+    "additionalProperties": false
+   }
+  },
+  {
+   "name": "ReportFindings",
+   "description": "<scrubbed 574 chars>",
+   "input_schema": {
+    "$schema": "<scrubbed 44 chars>",
+    "type": "object",
+    "properties": {
+     "level": {
+      "description": "<scrubbed 30 chars>",
+      "type": "string",
+      "enum": [
+       "low",
+       "medium",
+       "high",
+       "xhigh",
+       "max"
+      ]
+     },
+     "findings": {
+      "description": "<scrubbed 60 chars>",
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "file": {
+         "description": "<scrubbed 48 chars>",
+         "type": "string"
+        },
+        "line": {
+         "description": "<scrubbed 37 chars>",
+         "type": "integer",
+         "minimum": -9007199254740991,
+         "maximum": 9007199254740991
+        },
+        "summary": {
+         "description": "<scrubbed 36 chars>",
+         "type": "string"
+        },
+        "short_summary": {
+         "description": "<scrubbed 96 chars>",
+         "type": "string",
+         "maxLength": 60
+        },
+        "failure_scenario": {
+         "description": "<scrubbed 42 chars>",
+         "type": "string"
+        },
+        "category": {
+         "description": "<scrubbed 110 chars>",
+         "type": "string",
+         "maxLength": 40
+        },
+        "verdict": {
+         "description": "<scrubbed 57 chars>",
+         "type": "string",
+         "enum": [
+          "CONFIRMED",
+          "PLAUSIBLE"
+         ]
+        },
+        "outcome": {
+         "description": "<scrubbed 78 chars>",
+         "type": "string",
+         "enum": [
+          "fixed",
+          "skipped",
+          "no_change_needed"
+         ]
+        }
+       },
+       "required": [
+        "file",
+        "summary",
+        "failure_scenario"
+       ],
+       "additionalProperties": false
+      }
+     }
+    },
+    "required": [
+     "findings"
+    ],
+    "additionalProperties": false
+   }
+  },
+  {
+   "name": "ScheduleWakeup",
+   "description": "<scrubbed 3396 chars>",
+   "input_schema": {
+    "$schema": "<scrubbed 44 chars>",
+    "type": "object",
+    "properties": {
+     "delaySeconds": {
+      "description": "<scrubbed 98 chars>",
+      "type": "number"
+     },
+     "reason": {
+      "description": "<scrubbed 136 chars>",
+      "type": "string"
+     },
+     "prompt": {
+      "description": "<scrubbed 355 chars>",
+      "type": "string"
+     },
+     "stop": {
+      "description": "<scrubbed 154 chars>",
+      "type": "boolean"
+     },
+     "noop": {
+      "description": "<scrubbed 307 chars>",
+      "type": "boolean"
+     }
+    },
+    "additionalProperties": false
+   }
+  },
+  {
+   "name": "Skill",
+   "description": "<scrubbed 1417 chars>",
+   "input_schema": {
+    "$schema": "<scrubbed 44 chars>",
+    "type": "object",
+    "properties": {
+     "skill": {
+      "description": "<scrubbed 71 chars>",
+      "type": "string"
+     },
+     "args": {
+      "description": "<scrubbed 32 chars>",
+      "type": "string"
+     }
+    },
+    "required": [
+     "skill"
+    ],
+    "additionalProperties": false
+   }
+  },
+  {
+   "name": "ToolSearch",
+   "description": "<scrubbed 953 chars>",
+   "input_schema": {
+    "$schema": "<scrubbed 44 chars>",
+    "type": "object",
+    "properties": {
+     "query": {
+      "description": "<scrubbed 99 chars>",
+      "type": "string"
+     },
+     "max_results": {
+      "description": "<scrubbed 48 chars>",
+      "default": 5,
+      "type": "number"
+     }
+    },
+    "required": [
+     "query",
+     "max_results"
+    ],
+    "additionalProperties": false
+   }
+  },
+  {
+   "name": "Workflow",
+   "description": "<scrubbed 3480 chars>",
+   "input_schema": {
+    "$schema": "<scrubbed 44 chars>",
+    "type": "object",
+    "properties": {
+     "script": {
+      "description": "<scrubbed 207 chars>",
+      "type": "string",
+      "maxLength": 524288
+     },
+     "name": {
+      "description": "<scrubbed 105 chars>",
+      "type": "string"
+     },
+     "description": {
+      "description": "<scrubbed 68 chars>",
+      "type": "string"
+     },
+     "title": {
+      "description": "<scrubbed 62 chars>",
+      "type": "string"
+     },
+     "args": {
+      "description": "<scrubbed 280 chars>"
+     },
+     "scriptPath": {
+      "description": "<scrubbed 329 chars>",
+      "type": "string"
+     },
+     "resumeFromRunId": {
+      "description": "<scrubbed 251 chars>",
+      "type": "string",
+      "pattern": "^wf_[a-z0-9-]{6,}$"
+     }
+    },
+    "additionalProperties": false
+   }
+  },
+  {
+   "name": "DeferredToolPlaceholder",
+   "description": "<scrubbed 83 chars>",
+   "input_schema": {
+    "type": "object",
+    "properties": {}
+   },
+   "defer_loading": true
+  },
+  {
+   "name": "Write",
+   "description": "<scrubbed 240 chars>",
+   "input_schema": {
+    "$schema": "<scrubbed 44 chars>",
+    "type": "object",
+    "properties": {
+     "file_path": {
+      "description": "<scrubbed 71 chars>",
+      "type": "string"
+     },
+     "content": {
+      "description": "<scrubbed 32 chars>",
+      "type": "string"
+     }
+    },
+    "required": [
+     "file_path",
+     "content"
+    ],
+    "additionalProperties": false
+   }
+  }
+ ],
+ "metadata": {
+  "user_id": "<scrubbed 150 chars>"
+ },
+ "max_tokens": 128000,
+ "thinking": {
+  "type": "adaptive",
+  "display": "omitted"
+ },
+ "context_management": {
+  "edits": [
+   {
+    "type": "clear_thinking_20251015",
+    "keep": "all"
+   }
+  ]
+ },
+ "output_config": {
+  "effort": "medium"
+ },
+ "stream": true
+}

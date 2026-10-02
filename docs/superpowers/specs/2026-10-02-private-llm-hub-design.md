@@ -56,7 +56,7 @@ Checked on 2026-10-02 by running them, not by reading.
 - **Dependency conflict:** `llmagent` pins `comn` at `v0.4.0`; `anemos` pins
   `v0.5.2`. `agento` cannot depend on both until `llmagent` moves to `v0.5.2`.
   `comn` gained `exqlite` after `v0.4.0`.
-- Claude Code needs `/v1/messages` (it appends the path itself to
+- Claude Code posts to `/v1/messages?beta=true` (it appends the path itself to
   `ANTHROPIC_BASE_URL`), treats `/v1/messages/count_tokens` as optional, and
   reads `/v1/models` when `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`.
 - pi takes custom providers from `~/.pi/agent/models.json` with `api` of
@@ -91,27 +91,42 @@ The canonical request. Fields:
 | Field | Meaning |
 | --- | --- |
 | `system` | List of text blocks |
-| `messages` | List of `%{role, content}`; `role` is `:user` or `:assistant`; `content` is a list of blocks |
-| `tools` | List of `%{name, description, input_schema}` |
+| `messages` | List of `%{role, content, extra}`; `role` is `:user`, `:assistant`, or `:system`; `content` is a list of blocks (a bare string on the wire becomes one text block) |
+| `tools` | List of `%{name, description, input_schema, extra}` |
 | `tool_choice` | `:auto`, `:none`, `:required`, or `{:tool, name}` |
 | `params` | `max_tokens`, `temperature`, `top_p`, `stop`; absent keys stay absent |
 | `stream` | Whether the client asked for a stream |
 | `model` | The model string the client asked for, verbatim |
+| `extra` | Top-level request fields the canonical model has no word for |
 
 Block types: `:text`, `:image`, `:tool_call` (`id`, `name`, `input`),
 `:tool_result` (`tool_call_id`, `content`, `is_error`), `:reasoning`.
 
-Every block carries an `extra` map holding protocol-specific fields the
-canonical model has no word for (Anthropic `cache_control`, thinking
-`signature`). The rule:
+The turn, each message, each tool, and each block carry an `extra` map holding
+protocol-specific fields the canonical model has no word for. A real Claude
+Code request (captured 2026-10-02, scrubbed, in
+`test/fixtures/wire/claude_code_request.json` and
+`claude_code_followup_request.json`) has them at every level: top-level
+`thinking`, `context_management`, `output_config`, `metadata`, `safeguards`;
+`defer_loading` on tools; `cache_control` on blocks; a thinking `signature`. It
+also sends `role: "system"` messages in mid-conversation, and message content
+as either a string or a list. The rule:
 
 - Same protocol in and out: `extra` is re-emitted, so prompt caching and
   thinking signatures survive an Anthropic client talking to an Anthropic
   performer.
 - Crossing protocols: `extra` is dropped. That is the only silent loss.
-- A request feature with no canonical representation and no safe drop
-  (Anthropic server-side tools, unknown block types) is refused with a 400
-  naming the feature. Nothing is silently mistranslated.
+- Unknown fields are never a reason to refuse; they go in `extra`.
+- Two things are refused with a 400 naming them, because dropping them would
+  change what the turn means: a content block of an unknown type, and a tool
+  entry carrying a `type` (a vendor server-side tool the performer cannot
+  run).
+- Mid-conversation system messages cross into OpenAI Chat as user-role text,
+  and adjacent same-role messages are merged. One of the two live hosts
+  accepts a leading system message but answers HTTP 500 from its chat
+  template when a system message appears later in the conversation (recorded
+  in `test/fixtures/wire/openai_error_500_template.json`), so the portable
+  encoding is the default.
 
 ### Canonical stream events
 
