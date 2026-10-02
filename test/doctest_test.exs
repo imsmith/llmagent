@@ -50,4 +50,7 @@ defmodule LLMAgent.DoctestTest do
   doctest LLMAgent.Utils.Decoder
   doctest LLMAgent.Utils.Time
   doctest LLMAgent.Utils.RequireBinary
+
+  # Turn
+  doctest LLMAgent.Turn.Fold
 end
