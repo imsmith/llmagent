@@ -2,6 +2,48 @@
 
 Tracked here until they migrate to a real issue tracker. Newest first.
 
+## mDNS-discovered endpoints vanish 60 seconds after start
+
+**Filed:** 2026-10-02
+**Fixed:** 2026-10-02
+**Reported from:** running a long-lived gateway against a real Claude Code client
+
+### Symptom
+
+`priv/discovery/avahi-llama.tcl` registered each resolved host once, with a
+60-second lease, and never again. `LLMAgent.Tools.Discovery` sweeps expired
+leases every 30 seconds. Anything running longer than a minute therefore had
+no `compute.llm.chat` ads at all: a gateway that served its first request
+crashed on its second with an empty candidate list, and agento's endpoint
+dropdown emptied itself the same way.
+
+### Why it went unnoticed
+
+Every earlier consumer was short-lived — a test, a script, a page loaded
+just after boot. The shim also had no tests: it could not be sourced without
+spawning `avahi-browse`.
+
+### Resolution — 2026-10-02
+
+The shim remembers each resolved host and re-registers all of them on a
+timer (20 seconds; `AVAHI_LLAMA_RENEW_MS`) with a fresh lease. The port
+adapter already turns a register for a known id into an update. A goodbye
+line, or a later resolved line saying the host is not ready, withdraws the
+host; a later resolved line with a different model replaces what is
+remembered.
+
+The driver moved behind an `argv0` guard and the browse command became
+overridable (`AVAHI_LLAMA_BROWSE_CMD`), so the shim is now tested both ways:
+`test/tcl/avahi_llama_test.tcl` against recorded `avahi-browse` output, and
+`test/llmagent/discovery/avahi_llama_shim_test.exs` through `PortAdapter`
+with a fake source. The second fails against the old shim.
+
+**Not verified:** whether `avahi-browse` emits a fresh resolved line when a
+running host's TXT record changes (a model swap without the advertiser
+restarting). The shim does the right thing if it does.
+
+---
+
 ## `OSProcess.alive?/1` misreads a process whose name contains `") "`
 
 **Filed:** 2026-08-05
