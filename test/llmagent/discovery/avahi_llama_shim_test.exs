@@ -33,8 +33,10 @@ defmodule LLMAgent.Discovery.AvahiLlamaShimTest do
         env: [
           {~c"AVAHI_LLAMA_BROWSE_CMD", String.to_charlist(~s(sh -c "cat #{@fixture}; exec sleep 30"))},
           {~c"AVAHI_LLAMA_RENEW_MS", ~c"200"},
-          # One-second leases, so a test can outlive one.
-          {~c"AVAHI_LLAMA_LEASE_S", ~c"1"}
+          # Short leases, so a test can outlive one. Two seconds, not one:
+          # leases are stamped to the whole second, so a one-second lease
+          # issued late in a second has already run out at the next.
+          {~c"AVAHI_LLAMA_LEASE_S", ~c"2"}
         ]
       )
 
@@ -112,11 +114,11 @@ defmodule LLMAgent.Discovery.AvahiLlamaShimTest do
     assert DateTime.compare(later, before) == :gt
   end
 
-  # Each lease lasts one second here. Without renewal both ads would be gone
+  # Each lease lasts two seconds here. Without renewal both ads would be gone
   # well before this sweep.
   test "its ads outlive their leases" do
     await_ads(2)
-    Process.sleep(2_500)
+    Process.sleep(3_500)
     :ok = Reg.sweep_now()
     assert length(llama_ads()) == 2
   end
