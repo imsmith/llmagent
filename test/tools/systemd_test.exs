@@ -73,8 +73,9 @@ defmodule LLMAgent.Tools.SystemdTest do
       }
 
       assert {:ok, _output, _meta} =
-               Dispatcher.query("function.systemd", "status",
-                 %{"unit" => "ssh.service"}, policy: policy)
+               Dispatcher.query("function.systemd", "status", %{"unit" => "ssh.service"},
+                 policy: policy
+               )
     end
 
     @tag :integration

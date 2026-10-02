@@ -34,7 +34,10 @@ defmodule LLMAgent.Codec.AnthropicTest do
     do: for({"content_block_start", json} <- frames, do: json["content_block"]["type"])
 
   defp stop_reason(frames),
-    do: Enum.find_value(frames, fn {event, json} -> event == "message_delta" && json["delta"]["stop_reason"] end)
+    do:
+      Enum.find_value(frames, fn {event, json} ->
+        event == "message_delta" && json["delta"]["stop_reason"]
+      end)
 
   describe "decode_request/1 on a real Claude Code request" do
     setup do
@@ -52,7 +55,9 @@ defmodule LLMAgent.Codec.AnthropicTest do
     end
 
     test "keeps every unknown top-level field in extra", %{wire: wire, turn: turn} do
-      assert Map.keys(turn.extra) |> Enum.sort() == (Map.keys(wire) -- @canonical_keys) |> Enum.sort()
+      assert Map.keys(turn.extra) |> Enum.sort() ==
+               (Map.keys(wire) -- @canonical_keys) |> Enum.sort()
+
       assert turn.extra != %{}
     end
 
@@ -77,12 +82,18 @@ defmodule LLMAgent.Codec.AnthropicTest do
       assert Enum.any?(wire["tools"], &Map.has_key?(&1, "defer_loading"))
     end
 
-    test "keeps a mid-conversation system message and its unknown fields", %{wire: wire, turn: turn} do
-      assert Enum.map(turn.messages, & &1.role) == Enum.map(wire["messages"], &String.to_existing_atom(&1["role"]))
+    test "keeps a mid-conversation system message and its unknown fields", %{
+      wire: wire,
+      turn: turn
+    } do
+      assert Enum.map(turn.messages, & &1.role) ==
+               Enum.map(wire["messages"], &String.to_existing_atom(&1["role"]))
+
       assert :system in Enum.map(turn.messages, & &1.role)
 
       for {wire_message, message} <- Enum.zip(wire["messages"], turn.messages) do
-        assert Map.keys(message.extra) |> Enum.sort() == (Map.keys(wire_message) -- ~w(role content)) |> Enum.sort()
+        assert Map.keys(message.extra) |> Enum.sort() ==
+                 (Map.keys(wire_message) -- ~w(role content)) |> Enum.sort()
       end
     end
   end
@@ -94,11 +105,19 @@ defmodule LLMAgent.Codec.AnthropicTest do
       {:ok, wire: wire, turn: turn}
     end
 
-    test "decodes the assistant's reasoning and tool call, then the user's tool result", %{wire: wire, turn: turn} do
+    test "decodes the assistant's reasoning and tool call, then the user's tool result", %{
+      wire: wire,
+      turn: turn
+    } do
       index = Enum.find_index(turn.messages, &(&1.role == :assistant))
       assistant = Enum.at(turn.messages, index)
       user = Enum.at(turn.messages, index + 1)
-      wire_call = wire["messages"] |> Enum.at(index) |> Map.fetch!("content") |> Enum.find(&(&1["type"] == "tool_use"))
+
+      wire_call =
+        wire["messages"]
+        |> Enum.at(index)
+        |> Map.fetch!("content")
+        |> Enum.find(&(&1["type"] == "tool_use"))
 
       assert [%{type: :reasoning} = reasoning, %{type: :tool_call} = call] = assistant.content
       assert Map.has_key?(reasoning.extra, "signature")
@@ -115,10 +134,14 @@ defmodule LLMAgent.Codec.AnthropicTest do
     end
 
     test "decodes a system message whose content was a bare string", %{wire: wire, turn: turn} do
-      index = Enum.find_index(wire["messages"], &(&1["role"] == "system" and is_binary(&1["content"])))
+      index =
+        Enum.find_index(wire["messages"], &(&1["role"] == "system" and is_binary(&1["content"])))
+
       assert index != nil
 
-      assert %{role: :system, content: [%{type: :text, text: text}]} = Enum.at(turn.messages, index)
+      assert %{role: :system, content: [%{type: :text, text: text}]} =
+               Enum.at(turn.messages, index)
+
       assert text == Enum.at(wire["messages"], index)["content"]
     end
   end
@@ -129,7 +152,11 @@ defmodule LLMAgent.Codec.AnthropicTest do
     end
 
     test "refuses an unknown content block type", %{wire: wire} do
-      bad = %{"role" => "assistant", "content" => [%{"type" => "server_tool_use", "id" => "x", "name" => "web_search"}]}
+      bad = %{
+        "role" => "assistant",
+        "content" => [%{"type" => "server_tool_use", "id" => "x", "name" => "web_search"}]
+      }
+
       wire = Map.update!(wire, "messages", &(&1 ++ [bad]))
 
       assert {:error, {:unsupported, message}} = Anthropic.decode_request(wire)
@@ -137,7 +164,12 @@ defmodule LLMAgent.Codec.AnthropicTest do
     end
 
     test "refuses a vendor server-side tool", %{wire: wire} do
-      wire = Map.update!(wire, "tools", &[%{"type" => "web_search_20250305", "name" => "web_search"} | &1])
+      wire =
+        Map.update!(
+          wire,
+          "tools",
+          &[%{"type" => "web_search_20250305", "name" => "web_search"} | &1]
+        )
 
       assert {:error, {:unsupported, message}} = Anthropic.decode_request(wire)
       assert message =~ "web_search_20250305"
@@ -158,7 +190,11 @@ defmodule LLMAgent.Codec.AnthropicTest do
     end
 
     test "a known block missing a required field is invalid, not unsupported", %{wire: wire} do
-      for block <- [%{"type" => "tool_use", "name" => "f"}, %{"type" => "text"}, %{"type" => "tool_result"}] do
+      for block <- [
+            %{"type" => "tool_use", "name" => "f"},
+            %{"type" => "text"},
+            %{"type" => "tool_result"}
+          ] do
         wire = Map.update!(wire, "messages", &(&1 ++ [%{"role" => "user", "content" => [block]}]))
         assert {:error, {:invalid, _}} = Anthropic.decode_request(wire), inspect(block)
       end
@@ -173,7 +209,10 @@ defmodule LLMAgent.Codec.AnthropicTest do
 
     test "a model that is not a string is invalid", %{wire: wire} do
       for bad <- [%{"a" => 1}, ["x"], 7, true] do
-        assert {:error, {:invalid, message}} = Anthropic.decode_request(Map.put(wire, "model", bad)), inspect(bad)
+        assert {:error, {:invalid, message}} =
+                 Anthropic.decode_request(Map.put(wire, "model", bad)),
+               inspect(bad)
+
         assert message =~ "model"
       end
 
@@ -182,7 +221,9 @@ defmodule LLMAgent.Codec.AnthropicTest do
 
     test "refuses messages that are missing or not a list", %{wire: wire} do
       assert {:error, {:invalid, _}} = Anthropic.decode_request(Map.delete(wire, "messages"))
-      assert {:error, {:invalid, _}} = Anthropic.decode_request(Map.put(wire, "messages", "not-a-list"))
+
+      assert {:error, {:invalid, _}} =
+               Anthropic.decode_request(Map.put(wire, "messages", "not-a-list"))
     end
 
     test "does not mint atoms from wire strings", %{wire: wire} do
@@ -199,12 +240,24 @@ defmodule LLMAgent.Codec.AnthropicTest do
       {:ok, wire: WireFixtures.json("claude_code_followup_request.json")}
     end
 
-    test "redacted thinking is carried as reasoning and never reaches an OpenAI performer", %{wire: wire} do
-      redacted = %{"role" => "assistant", "content" => [%{"type" => "redacted_thinking", "data" => "opaque"}, %{"type" => "text", "text" => "hi"}]}
+    test "redacted thinking is carried as reasoning and never reaches an OpenAI performer", %{
+      wire: wire
+    } do
+      redacted = %{
+        "role" => "assistant",
+        "content" => [
+          %{"type" => "redacted_thinking", "data" => "opaque"},
+          %{"type" => "text", "text" => "hi"}
+        ]
+      }
+
       wire = Map.update!(wire, "messages", &(&1 ++ [redacted]))
 
       assert {:ok, turn} = Anthropic.decode_request(wire)
-      assert [%{type: :reasoning, text: "", extra: extra}, %{type: :text}] = List.last(turn.messages).content
+
+      assert [%{type: :reasoning, text: "", extra: extra}, %{type: :text}] =
+               List.last(turn.messages).content
+
       assert extra["redacted_thinking"]["data"] == "opaque"
 
       refute turn |> OpenAI.encode_request("m") |> Jason.encode!() =~ "opaque"
@@ -217,7 +270,10 @@ defmodule LLMAgent.Codec.AnthropicTest do
           %{
             "type" => "tool_result",
             "tool_use_id" => "t1",
-            "content" => [%{"type" => "tool_reference", "tool_name" => "Bash"}, %{"type" => "text", "text" => "found"}]
+            "content" => [
+              %{"type" => "tool_reference", "tool_name" => "Bash"},
+              %{"type" => "text", "text" => "found"}
+            ]
           }
         ]
       }
@@ -225,8 +281,13 @@ defmodule LLMAgent.Codec.AnthropicTest do
       wire = Map.update!(wire, "messages", &(&1 ++ [result]))
 
       assert {:ok, turn} = Anthropic.decode_request(wire)
-      assert [%{type: :tool_result, content: [marker, %{type: :text, text: "found"}]}] = List.last(turn.messages).content
-      assert %{type: :text, text: text, extra: %{"omitted" => %{"type" => "tool_reference"}}} = marker
+
+      assert [%{type: :tool_result, content: [marker, %{type: :text, text: "found"}]}] =
+               List.last(turn.messages).content
+
+      assert %{type: :text, text: text, extra: %{"omitted" => %{"type" => "tool_reference"}}} =
+               marker
+
       assert text =~ "tool_reference"
     end
   end
@@ -257,7 +318,9 @@ defmodule LLMAgent.Codec.AnthropicTest do
     end
 
     test "the follow-up pairs the assistant's tool call with a tool message" do
-      {:ok, turn} = "claude_code_followup_request.json" |> WireFixtures.json() |> Anthropic.decode_request()
+      {:ok, turn} =
+        "claude_code_followup_request.json" |> WireFixtures.json() |> Anthropic.decode_request()
+
       messages = OpenAI.encode_request(turn, "performer-model")["messages"]
       index = Enum.find_index(messages, &(&1["role"] == "assistant"))
 
@@ -303,7 +366,8 @@ defmodule LLMAgent.Codec.AnthropicTest do
       encoded = "openai_text_stream.sse" |> openai_events() |> encode()
 
       text =
-        for {"content_block_delta", %{"delta" => %{"type" => "text_delta", "text" => text}}} <- encoded,
+        for {"content_block_delta", %{"delta" => %{"type" => "text_delta", "text" => text}}} <-
+              encoded,
             into: "",
             do: text
 
@@ -316,7 +380,8 @@ defmodule LLMAgent.Codec.AnthropicTest do
       inputs =
         encoded
         |> Enum.flat_map(fn
-          {"content_block_delta", %{"index" => index, "delta" => %{"type" => "input_json_delta", "partial_json" => json}}} ->
+          {"content_block_delta",
+           %{"index" => index, "delta" => %{"type" => "input_json_delta", "partial_json" => json}}} ->
             [{index, json}]
 
           _ ->
@@ -329,11 +394,16 @@ defmodule LLMAgent.Codec.AnthropicTest do
       assert inputs == [%{"city" => "Paris"}, %{"city" => "Oslo"}]
 
       assert [%{"name" => "get_weather", "input" => %{}}, %{"name" => "get_weather"}] =
-               for({"content_block_start", %{"content_block" => %{"type" => "tool_use"} = block}} <- encoded, do: block)
+               for(
+                 {"content_block_start", %{"content_block" => %{"type" => "tool_use"} = block}} <-
+                   encoded,
+                 do: block
+               )
     end
 
     test "echoes the client's model and the given id, not the performer's" do
-      [{"message_start", json} | _] = "openai_text_stream.sse" |> openai_events() |> encode(model: "claude-x", id: "msg_1")
+      [{"message_start", json} | _] =
+        "openai_text_stream.sse" |> openai_events() |> encode(model: "claude-x", id: "msg_1")
 
       assert json["message"]["model"] == "claude-x"
       assert json["message"]["id"] == "msg_1"
@@ -342,19 +412,37 @@ defmodule LLMAgent.Codec.AnthropicTest do
     end
 
     test "reports usage as integers, with unknown counts as zero" do
-      encoded = encode([{:start, %{model: "m"}}, {:stop, :end_turn, %{input_tokens: nil, output_tokens: nil}}])
-      assert {"message_delta", %{"usage" => %{"input_tokens" => 0, "output_tokens" => 0}}} = Enum.at(encoded, -2)
+      encoded =
+        encode([
+          {:start, %{model: "m"}},
+          {:stop, :end_turn, %{input_tokens: nil, output_tokens: nil}}
+        ])
+
+      assert {"message_delta", %{"usage" => %{"input_tokens" => 0, "output_tokens" => 0}}} =
+               Enum.at(encoded, -2)
 
       encoded = "openai_text_stream.sse" |> openai_events() |> encode()
-      assert {"message_delta", %{"usage" => %{"input_tokens" => input, "output_tokens" => output}}} = Enum.at(encoded, -2)
+
+      assert {"message_delta",
+              %{"usage" => %{"input_tokens" => input, "output_tokens" => output}}} =
+               Enum.at(encoded, -2)
+
       assert input > 0 and output > 0
     end
 
     test "an error event produces an error frame and nothing after it" do
-      events = [{:start, %{model: "m"}}, {:block_start, 0, :text}, {:error, :incomplete_stream}, {:block_stop, 0}]
+      events = [
+        {:start, %{model: "m"}},
+        {:block_start, 0, :text},
+        {:error, :incomplete_stream},
+        {:block_stop, 0}
+      ]
+
       encoded = encode(events)
 
-      assert {"error", %{"error" => %{"type" => "api_error", "message" => message}}} = List.last(encoded)
+      assert {"error", %{"error" => %{"type" => "api_error", "message" => message}}} =
+               List.last(encoded)
+
       assert is_binary(message)
       assert Enum.count(encoded, fn {event, _} -> event == "error" end) == 1
     end
@@ -369,13 +457,24 @@ defmodule LLMAgent.Codec.AnthropicTest do
   describe "encode_response/2" do
     test "a folded two-tool turn becomes a message with tool_use blocks" do
       {:ok, result} =
-        "openai_two_tools_stream.sse" |> openai_events() |> Enum.reduce(Fold.new(), &Fold.step(&2, &1)) |> Fold.result()
+        "openai_two_tools_stream.sse"
+        |> openai_events()
+        |> Enum.reduce(Fold.new(), &Fold.step(&2, &1))
+        |> Fold.result()
 
-      body = result |> Anthropic.encode_response(model: "claude-x", id: "msg_1") |> Jason.encode!() |> Jason.decode!()
+      body =
+        result
+        |> Anthropic.encode_response(model: "claude-x", id: "msg_1")
+        |> Jason.encode!()
+        |> Jason.decode!()
 
-      assert %{"type" => "message", "role" => "assistant", "model" => "claude-x", "id" => "msg_1"} = body
+      assert %{"type" => "message", "role" => "assistant", "model" => "claude-x", "id" => "msg_1"} =
+               body
+
       assert body["stop_reason"] == "tool_use"
-      assert is_integer(body["usage"]["input_tokens"]) and is_integer(body["usage"]["output_tokens"])
+
+      assert is_integer(body["usage"]["input_tokens"]) and
+               is_integer(body["usage"]["output_tokens"])
 
       assert [%{"input" => %{"city" => "Paris"}}, %{"input" => %{"city" => "Oslo"}}] =
                Enum.filter(body["content"], &(&1["type"] == "tool_use"))

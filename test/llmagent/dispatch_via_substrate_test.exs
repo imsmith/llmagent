@@ -49,9 +49,11 @@ defmodule LLMAgent.DispatchViaSubstrateTest do
     LLMAgent.EventBus.subscribe("agent.message")
     LLMAgent.prompt({:global, :substrate_test}, "hash this")
 
-    assert_receive {:event, "agent.message", %{data: %{role: "user", content: "hash this"}}}, 1_000
+    assert_receive {:event, "agent.message", %{data: %{role: "user", content: "hash this"}}},
+                   1_000
 
-    assert_receive {:event, "agent.message", %{data: %{role: "function", content: payload}}}, 2_000
+    assert_receive {:event, "agent.message", %{data: %{role: "function", content: payload}}},
+                   2_000
 
     assert {:ok, %{"status" => "ok", "output" => hash}} = Jason.decode(payload)
     assert hash == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"

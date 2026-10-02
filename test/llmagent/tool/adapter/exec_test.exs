@@ -30,7 +30,12 @@ defmodule LLMAgent.Tool.Adapter.ExecTest do
       constraint: %{idempotency: %{}, blast_radius: %{scope: :none}},
       affordance: %{declared: [], learned: [], open: true},
       fidelity: :speculative,
-      provenance: %{source: "test", produced_at: ~U[2026-08-05 00:00:00Z], based_on: [], signature: nil},
+      provenance: %{
+        source: "test",
+        produced_at: ~U[2026-08-05 00:00:00Z],
+        based_on: [],
+        signature: nil
+      },
       lease: :permanent,
       meta: %{extraction: :complete, language: "bash"}
     })
@@ -230,6 +235,7 @@ defmodule LLMAgent.Tool.Adapter.ExecTest do
   test "an unknown action is refused", %{dir: dir} do
     path = fixture(dir, "hello.sh", "#!/bin/bash\necho hello\n")
     payload = %{argv: [path], interpreter: "bash"}
+
     assert {:error, {:unknown_action, "frobnicate"}} =
              Exec.act(payload, "frobnicate", %{}, nil, ad: ad_for(path))
   end
@@ -387,6 +393,7 @@ defmodule LLMAgent.Tool.Adapter.ExecTest do
 
     test "a non-list args value is refused, not raised", %{dir: dir} do
       path = fixture(dir, "badargs.sh", "#!/bin/bash\necho ran\n")
+
       assert {:error, {:refused, :arity, :unknown}} =
                call(path, %{"args" => "not a list"}, [], ad_for(path))
     end

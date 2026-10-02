@@ -27,9 +27,10 @@ defmodule LLMAgent.MCP do
   def connect(name, opts \\ []) do
     transport = Keyword.get(opts, :transport, LLMAgent.MCP.Transport.HTTP)
 
-    transport_opts = Keyword.get_lazy(opts, :transport_opts, fn ->
-      build_transport_opts(opts)
-    end)
+    transport_opts =
+      Keyword.get_lazy(opts, :transport_opts, fn ->
+        build_transport_opts(opts)
+      end)
 
     child_opts = [
       name: name,

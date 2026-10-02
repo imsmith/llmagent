@@ -19,7 +19,8 @@ defmodule LLMAgent.Discovery.AvahiLlamaShimTest do
 
   # Overridable so the suite can be pointed at a variant of the shim — used to
   # confirm this test fails against one that does not renew.
-  defp shim, do: System.get_env("AVAHI_LLAMA_SHIM") || Path.expand("priv/discovery/avahi-llama.tcl")
+  defp shim,
+    do: System.get_env("AVAHI_LLAMA_SHIM") || Path.expand("priv/discovery/avahi-llama.tcl")
 
   setup do
     Reg.reset!()
@@ -31,7 +32,8 @@ defmodule LLMAgent.Discovery.AvahiLlamaShimTest do
         command: tclsh,
         args: [shim()],
         env: [
-          {~c"AVAHI_LLAMA_BROWSE_CMD", String.to_charlist(~s(sh -c "cat #{@fixture}; exec sleep 30"))},
+          {~c"AVAHI_LLAMA_BROWSE_CMD",
+           String.to_charlist(~s(sh -c "cat #{@fixture}; exec sleep 30"))},
           {~c"AVAHI_LLAMA_RENEW_MS", ~c"200"},
           # Short leases, so a test can outlive one. Two seconds, not one:
           # leases are stamped to the whole second, so a one-second lease
@@ -53,9 +55,14 @@ defmodule LLMAgent.Discovery.AvahiLlamaShimTest do
 
   defp await_ads(count, deadline_ms \\ 3_000) do
     cond do
-      length(llama_ads()) == count -> llama_ads()
-      deadline_ms <= 0 -> flunk("expected #{count} ads, have #{inspect(Enum.map(llama_ads(), & &1.id))}")
-      true -> Process.sleep(50) && await_ads(count, deadline_ms - 50)
+      length(llama_ads()) == count ->
+        llama_ads()
+
+      deadline_ms <= 0 ->
+        flunk("expected #{count} ads, have #{inspect(Enum.map(llama_ads(), & &1.id))}")
+
+      true ->
+        Process.sleep(50) && await_ads(count, deadline_ms - 50)
     end
   end
 

@@ -140,7 +140,8 @@ defmodule LLMAgent.Tools.Discovery do
   @spec validate(ToolAd.t()) :: :ok | {:error, {:invalid_ad, atom(), String.t()}}
   def validate(%ToolAd{} = ad) do
     cond do
-      not (is_binary(ad.coordinate) and String.contains?(ad.coordinate, ".") and ad.coordinate != "") ->
+      not (is_binary(ad.coordinate) and String.contains?(ad.coordinate, ".") and
+               ad.coordinate != "") ->
         {:error, {:invalid_ad, :coordinate, "must be non-empty dotted string"}}
 
       not (is_list(ad.kinds) and ad.kinds != [] and Enum.all?(ad.kinds, &is_atom/1)) ->
@@ -295,6 +296,7 @@ defmodule LLMAgent.Tools.Discovery do
   end
 
   defp kinds_ok?(:any, _ad_kinds), do: true
+
   defp kinds_ok?(required, ad_kinds) when is_list(required),
     do: Enum.all?(required, &(&1 in ad_kinds))
 

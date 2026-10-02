@@ -24,14 +24,16 @@ defmodule LLMAgent.MCP.IntegrationTest do
         _, _ -> :ok
       end
     end)
+
     :ok
   end
 
   test "MCP tool is callable through the standard agent dispatch path" do
-    {:ok, _pid} = MCP.connect(:integ_server,
-      transport: LLMAgent.MCP.Transport.Mock,
-      transport_opts: [tools: @mock_tools]
-    )
+    {:ok, _pid} =
+      MCP.connect(:integ_server,
+        transport: LLMAgent.MCP.Transport.Mock,
+        transport_opts: [tools: @mock_tools]
+      )
 
     assert {:ok, LLMAgent.MCP.ToolProxy} = LLMAgent.Tools.get(:integ_server_greet)
 
@@ -50,10 +52,11 @@ defmodule LLMAgent.MCP.IntegrationTest do
   end
 
   test "MCP tool descriptions are available for system prompt" do
-    {:ok, _pid} = MCP.connect(:integ_server,
-      transport: LLMAgent.MCP.Transport.Mock,
-      transport_opts: [tools: @mock_tools]
-    )
+    {:ok, _pid} =
+      MCP.connect(:integ_server,
+        transport: LLMAgent.MCP.Transport.Mock,
+        transport_opts: [tools: @mock_tools]
+      )
 
     descs = MCP.tool_descriptions()
     desc = descs[:integ_server_greet]
@@ -63,10 +66,11 @@ defmodule LLMAgent.MCP.IntegrationTest do
   end
 
   test "tools are cleaned up after disconnect" do
-    {:ok, _pid} = MCP.connect(:integ_server,
-      transport: LLMAgent.MCP.Transport.Mock,
-      transport_opts: [tools: @mock_tools]
-    )
+    {:ok, _pid} =
+      MCP.connect(:integ_server,
+        transport: LLMAgent.MCP.Transport.Mock,
+        transport_opts: [tools: @mock_tools]
+      )
 
     assert {:ok, _} = LLMAgent.Tools.get(:integ_server_greet)
 

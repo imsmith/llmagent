@@ -110,7 +110,9 @@ defmodule LLMAgent.TupleSpace do
   @doc "Blocking destructive read from the named space."
   def in_(space, pattern, timeout) do
     case Pattern.compile(pattern) do
-      {:error, _} = err -> err
+      {:error, _} = err ->
+        err
+
       {:ok, _} ->
         case lookup(space) do
           {:ok, pid} -> Space.in_(pid, pattern, timeout)
@@ -122,7 +124,9 @@ defmodule LLMAgent.TupleSpace do
   @doc "Blocking non-destructive read from the named space."
   def rd(space, pattern, timeout) do
     case Pattern.compile(pattern) do
-      {:error, _} = err -> err
+      {:error, _} = err ->
+        err
+
       {:ok, _} ->
         case lookup(space) do
           {:ok, pid} -> Space.rd(pid, pattern, timeout)
@@ -134,7 +138,9 @@ defmodule LLMAgent.TupleSpace do
   @doc "Non-blocking destructive read from the named space."
   def in_nowait(space, pattern) do
     case Pattern.compile(pattern) do
-      {:error, _} = err -> err
+      {:error, _} = err ->
+        err
+
       {:ok, _} ->
         case lookup(space) do
           {:ok, pid} -> Space.in_nowait(pid, pattern)
@@ -153,7 +159,9 @@ defmodule LLMAgent.TupleSpace do
   """
   def rd_nowait(space, pattern) do
     case Pattern.compile(pattern) do
-      {:error, _} = err -> err
+      {:error, _} = err ->
+        err
+
       {:ok, spec} ->
         table = :"llmagent_ts_#{space}"
         match_pattern = spec |> hd() |> elem(0)

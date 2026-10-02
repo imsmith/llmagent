@@ -34,16 +34,23 @@ defmodule LLMAgent.Tools.Bash do
         blast_radius: %{"exec" => :system}
       },
       affordance: %{
-        declared: [%{
-          intent: "execute arbitrary shell commands on the host",
-          suits: "anything the agent might run from a terminal",
-          avoid_when: "a more specific tool (file, net, systemd, etc.) covers the use case"
-        }],
+        declared: [
+          %{
+            intent: "execute arbitrary shell commands on the host",
+            suits: "anything the agent might run from a terminal",
+            avoid_when: "a more specific tool (file, net, systemd, etc.) covers the use case"
+          }
+        ],
         learned: [],
         open: false
       },
       fidelity: :authoritative,
-      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      provenance: %{
+        source: "llmagent.builtin",
+        produced_at: ~U[2026-05-18 00:00:00Z],
+        based_on: [],
+        signature: nil
+      },
       lease: :permanent,
       meta: %{}
     })

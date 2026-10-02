@@ -116,8 +116,9 @@ defmodule LLMAgent.Tools.WebTest do
       }
 
       assert {:ok, _value, _meta} =
-               Dispatcher.query("function.http", "get",
-                 %{"url" => "#{base_url}/hello"}, policy: policy)
+               Dispatcher.query("function.http", "get", %{"url" => "#{base_url}/hello"},
+                 policy: policy
+               )
     end
 
     test "dispatcher.act/5 post dispatches", %{bypass: bypass, base_url: base_url} do
@@ -133,7 +134,9 @@ defmodule LLMAgent.Tools.WebTest do
       }
 
       assert {:ok, _ack, _meta} =
-               Dispatcher.act("function.http", "post",
+               Dispatcher.act(
+                 "function.http",
+                 "post",
                  %{"url" => "#{base_url}/submit", "body" => %{"x" => 1}},
                  nil, policy: policy)
     end

@@ -36,13 +36,22 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
       constraint: %{idempotency: %{}, blast_radius: %{}},
       affordance: %{declared: [%{intent: :long_context, n_ctx: 32_768}], learned: [], open: true},
       fidelity: :authoritative,
-      provenance: %{source: "mdns/_llama._tcp", produced_at: DateTime.utc_now(), based_on: [], signature: nil},
+      provenance: %{
+        source: "mdns/_llama._tcp",
+        produced_at: DateTime.utc_now(),
+        based_on: [],
+        signature: nil
+      },
       lease: :permanent
     })
   end
 
   defp turn do
-    %Turn{messages: [%{role: :user, content: [%{type: :text, text: "weather?", extra: %{}}], extra: %{}}]}
+    %Turn{
+      messages: [
+        %{role: :user, content: [%{type: :text, text: "weather?", extra: %{}}], extra: %{}}
+      ]
+    }
   end
 
   defp collector do
@@ -79,9 +88,14 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
     serve(ctx.bypass, "openai_tool_stream.sse")
 
     assert {:ok, message, provenance} =
-             Dispatcher.generate("compute.llm.chat", "chat", %{turn: turn()}, policy: @allow, into: collector())
+             Dispatcher.generate("compute.llm.chat", "chat", %{turn: turn()},
+               policy: @allow,
+               into: collector()
+             )
 
-    assert %{type: :tool_call, name: "get_weather", input: %{"city" => "Paris"}} = List.last(message.content)
+    assert %{type: :tool_call, name: "get_weather", input: %{"city" => "Paris"}} =
+             List.last(message.content)
+
     assert provenance.stop_reason == :tool_use
     assert_received {:event, {:start, _}}
     assert_received {:event, {:stop, :tool_use, _}}
@@ -97,13 +111,17 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
     refute_received {:event, _}
   end
 
-  test "a policy naming another provenance source denies and the performer is never contacted", ctx do
+  test "a policy naming another provenance source denies and the performer is never contacted",
+       ctx do
     :ok = Discovery.register(llama_ad(ctx.host, "m"))
     refuse_all(ctx.bypass)
     policy = %{@allow | provenance: %{source: ["hub.config"], signed: false}}
 
     assert {:error, :forbidden, :provenance} =
-             Dispatcher.generate("compute.llm.chat", "chat", %{turn: turn()}, policy: policy, into: collector())
+             Dispatcher.generate("compute.llm.chat", "chat", %{turn: turn()},
+               policy: policy,
+               into: collector()
+             )
 
     refute_received {:event, _}
   end
@@ -132,14 +150,17 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
 
     on_exit(fn -> :telemetry.detach(handler) end)
 
-    assert {:ok, _, _} = Dispatcher.generate("compute.llm.chat", "chat", %{turn: turn()}, policy: @allow)
+    assert {:ok, _, _} =
+             Dispatcher.generate("compute.llm.chat", "chat", %{turn: turn()}, policy: @allow)
+
     assert_receive {:telemetry, %{coordinate: "compute.llm.chat", action: "chat"}}, 500
   end
 
   # The mDNS shim derives an ad's id from host and port, and the port adapter
   # falls back from register/1 to update/1 on :duplicate_id. This is what a
   # host loading a different model looks like to the registry.
-  test "a host that changes its model replaces its ad, and the next turn uses the new model", ctx do
+  test "a host that changes its model replaces its ad, and the next turn uses the new model",
+       ctx do
     :ok = Discovery.register(llama_ad(ctx.host, "old-model"))
 
     assert {:error, :duplicate_id} = Discovery.register(llama_ad(ctx.host, "new-model"))
@@ -149,7 +170,10 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
              Discovery.find_all(ToolQuery.new(%{coordinate: "compute.llm.chat"}))
 
     serve(ctx.bypass, "openai_text_stream.sse")
-    assert {:ok, _, _} = Dispatcher.generate("compute.llm.chat", "chat", %{turn: turn()}, policy: @allow)
+
+    assert {:ok, _, _} =
+             Dispatcher.generate("compute.llm.chat", "chat", %{turn: turn()}, policy: @allow)
+
     assert_received {:request, %{"model" => "new-model"}}
   end
 end

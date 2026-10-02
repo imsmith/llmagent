@@ -10,13 +10,18 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatStreamTest do
 
   setup do
     bypass = Bypass.open()
-    {:ok, bypass: bypass, payload: %{api_host: "http://localhost:#{bypass.port}", model: "performer-model"}}
+
+    {:ok,
+     bypass: bypass,
+     payload: %{api_host: "http://localhost:#{bypass.port}", model: "performer-model"}}
   end
 
   defp turn do
     %Turn{
       model: "client-model",
-      messages: [%{role: :user, content: [%{type: :text, text: "weather?", extra: %{}}], extra: %{}}],
+      messages: [
+        %{role: :user, content: [%{type: :text, text: "weather?", extra: %{}}], extra: %{}}
+      ],
       stream: false
     }
   end
@@ -63,7 +68,10 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatStreamTest do
              Enum.filter(message.content, &(&1.type == :tool_call))
 
     assert provenance.stop_reason == :tool_use
-    assert is_integer(provenance.usage.input_tokens) and is_integer(provenance.usage.output_tokens)
+
+    assert is_integer(provenance.usage.input_tokens) and
+             is_integer(provenance.usage.output_tokens)
+
     assert is_integer(provenance.latency_ms) and provenance.latency_ms >= 0
     assert is_binary(provenance.model)
 
@@ -74,7 +82,8 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatStreamTest do
   test "asks the performer to stream with usage, under the binding's model", ctx do
     serve(ctx.bypass, 200, WireFixtures.read("openai_text_stream.sse"))
 
-    assert {:ok, _message, _provenance} = OpenAIChat.generate(ctx.payload, "chat", %{turn: turn()}, [])
+    assert {:ok, _message, _provenance} =
+             OpenAIChat.generate(ctx.payload, "chat", %{turn: turn()}, [])
 
     assert_received {:request, request}
     assert request["stream"] == true
@@ -93,7 +102,12 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatStreamTest do
   end
 
   test "a chat-template failure is an http error carrying the performer's message", ctx do
-    serve(ctx.bypass, 500, WireFixtures.read("openai_error_500_template.json"), "application/json")
+    serve(
+      ctx.bypass,
+      500,
+      WireFixtures.read("openai_error_500_template.json"),
+      "application/json"
+    )
 
     assert {:error, {:http_error, 500, body}} =
              OpenAIChat.generate(ctx.payload, "chat", %{turn: turn()}, into: collector())
@@ -158,7 +172,9 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatStreamTest do
     payload = %{api_host: "http://localhost:#{port}", model: "performer-model"}
     started = System.monotonic_time(:millisecond)
 
-    assert {:error, :halted} = OpenAIChat.generate(payload, "chat", %{turn: turn()}, into: fn _event -> :halt end)
+    assert {:error, :halted} =
+             OpenAIChat.generate(payload, "chat", %{turn: turn()}, into: fn _event -> :halt end)
+
     assert System.monotonic_time(:millisecond) - started < 1_000
     assert Task.await(performer, 5_000) == :closed
   end
@@ -190,7 +206,9 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatStreamTest do
 
     payload = %{api_host: "http://localhost:#{port}", model: "performer-model"}
 
-    assert {:error, reason} = OpenAIChat.generate(payload, "chat", %{turn: turn()}, into: collector())
+    assert {:error, reason} =
+             OpenAIChat.generate(payload, "chat", %{turn: turn()}, into: collector())
+
     refute reason == :halted
     Task.await(performer, 5_000)
 
@@ -211,11 +229,17 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatStreamTest do
   # chose it under a policy, and a redirect would send the prompt past that.
   test "a redirect is not followed", ctx do
     elsewhere = Bypass.open()
-    Bypass.stub(elsewhere, "POST", "/chat/completions", fn _conn -> flunk("the redirect was followed") end)
+
+    Bypass.stub(elsewhere, "POST", "/chat/completions", fn _conn ->
+      flunk("the redirect was followed")
+    end)
 
     Bypass.expect_once(ctx.bypass, "POST", "/chat/completions", fn conn ->
       conn
-      |> Plug.Conn.put_resp_header("location", "http://localhost:#{elsewhere.port}/chat/completions")
+      |> Plug.Conn.put_resp_header(
+        "location",
+        "http://localhost:#{elsewhere.port}/chat/completions"
+      )
       |> Plug.Conn.resp(307, "")
     end)
 
@@ -228,7 +252,9 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatStreamTest do
   test "a performer that is not listening is an error, not a raise", ctx do
     Bypass.down(ctx.bypass)
 
-    assert {:error, _reason} = OpenAIChat.generate(ctx.payload, "chat", %{turn: turn()}, into: collector())
+    assert {:error, _reason} =
+             OpenAIChat.generate(ctx.payload, "chat", %{turn: turn()}, into: collector())
+
     assert received_events() == []
   end
 
@@ -240,6 +266,11 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatStreamTest do
     end)
 
     assert {:ok, "hello back", %{model: "performer-model"}} =
-             OpenAIChat.generate(ctx.payload, "chat", %{messages: [%{"role" => "user", "content" => "hi"}]}, [])
+             OpenAIChat.generate(
+               ctx.payload,
+               "chat",
+               %{messages: [%{"role" => "user", "content" => "hi"}]},
+               []
+             )
   end
 end

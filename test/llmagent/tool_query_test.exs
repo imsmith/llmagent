@@ -14,12 +14,13 @@ defmodule LLMAgent.ToolQueryTest do
     end
 
     test "accepts explicit kinds, fidelity_min, limit" do
-      q = ToolQuery.new(%{
-        coordinate: "resource.network.netif",
-        kinds: [:query],
-        fidelity_min: :trained,
-        limit: 5
-      })
+      q =
+        ToolQuery.new(%{
+          coordinate: "resource.network.netif",
+          kinds: [:query],
+          fidelity_min: :trained,
+          limit: 5
+        })
 
       assert q.kinds == [:query]
       assert q.fidelity_min == :trained

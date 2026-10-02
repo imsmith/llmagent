@@ -136,7 +136,8 @@ defmodule LLMAgent.Tool.Dispatcher do
     ArgumentError -> {:error, :not_found}
   end
 
-  defp generate_id, do: "appr_" <> (:crypto.strong_rand_bytes(8) |> Base.url_encode64(padding: false))
+  defp generate_id,
+    do: "appr_" <> (:crypto.strong_rand_bytes(8) |> Base.url_encode64(padding: false))
 
   defp stringify(nil), do: nil
   defp stringify(a) when is_atom(a), do: Atom.to_string(a)

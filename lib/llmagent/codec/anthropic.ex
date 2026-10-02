@@ -75,7 +75,11 @@ defmodule LLMAgent.Codec.Anthropic do
          tool_choice: tool_choice,
          params: decode_params(wire),
          stream: wire["stream"] == true,
-         extra: Map.drop(wire, ~w(model system messages tools tool_choice stream max_tokens temperature top_p stop_sequences))
+         extra:
+           Map.drop(
+             wire,
+             ~w(model system messages tools tool_choice stream max_tokens temperature top_p stop_sequences)
+           )
        }}
     end
   end
@@ -113,7 +117,10 @@ defmodule LLMAgent.Codec.Anthropic do
 
   # Content is a bare string, a list of blocks, or absent.
   defp decode_content(nil), do: {:ok, []}
-  defp decode_content(text) when is_binary(text), do: {:ok, [%{type: :text, text: text, extra: %{}}]}
+
+  defp decode_content(text) when is_binary(text),
+    do: {:ok, [%{type: :text, text: text, extra: %{}}]}
+
   defp decode_content(blocks) when is_list(blocks), do: map_ok(blocks, &decode_block/1)
   defp decode_content(_other), do: {:error, {:invalid, "content must be a string or a list"}}
 
@@ -124,7 +131,9 @@ defmodule LLMAgent.Codec.Anthropic do
     do: {:ok, %{type: :reasoning, text: "", extra: %{"redacted_thinking" => wire}}}
 
   defp decode_block(%{"type" => "thinking"} = wire),
-    do: {:ok, %{type: :reasoning, text: wire["thinking"] || "", extra: Map.drop(wire, ~w(type thinking))}}
+    do:
+      {:ok,
+       %{type: :reasoning, text: wire["thinking"] || "", extra: Map.drop(wire, ~w(type thinking))}}
 
   defp decode_block(%{"type" => "image", "source" => %{"type" => "base64"} = source} = wire) do
     {:ok,
@@ -170,7 +179,9 @@ defmodule LLMAgent.Codec.Anthropic do
   defp decode_block(%{"type" => type}) when type in ~w(text image tool_use tool_result),
     do: {:error, {:invalid, "malformed #{type} block"}}
 
-  defp decode_block(%{"type" => type}), do: {:error, {:unsupported, "content block type: #{inspect(type)}"}}
+  defp decode_block(%{"type" => type}),
+    do: {:error, {:unsupported, "content block type: #{inspect(type)}"}}
+
   defp decode_block(_wire), do: {:error, {:invalid, "content block without a type"}}
 
   # A tool result's content, where a block of unknown type is degraded to a
@@ -259,7 +270,9 @@ defmodule LLMAgent.Codec.Anthropic do
   end
 
   def encode_stream(state, {:block_start, index, kind}),
-    do: {frame("content_block_start", %{"index" => index, "content_block" => empty_block(kind)}), state}
+    do:
+      {frame("content_block_start", %{"index" => index, "content_block" => empty_block(kind)}),
+       state}
 
   def encode_stream(state, {:text_delta, index, text}),
     do: {delta(index, %{"type" => "text_delta", "text" => text}), state}
@@ -287,10 +300,17 @@ defmodule LLMAgent.Codec.Anthropic do
     {frame("error", %{"error" => error}), %{state | failed: true}}
   end
 
-  defp delta(index, delta), do: frame("content_block_delta", %{"index" => index, "delta" => delta})
+  defp delta(index, delta),
+    do: frame("content_block_delta", %{"index" => index, "delta" => delta})
 
   defp frame(type, body),
-    do: ["event: ", type, "\ndata: ", Jason.encode_to_iodata!(Map.put(body, "type", type)), "\n\n"]
+    do: [
+      "event: ",
+      type,
+      "\ndata: ",
+      Jason.encode_to_iodata!(Map.put(body, "type", type)),
+      "\n\n"
+    ]
 
   defp empty_block(:text), do: %{"type" => "text", "text" => ""}
   defp empty_block(:reasoning), do: %{"type" => "thinking", "thinking" => ""}
@@ -304,7 +324,10 @@ defmodule LLMAgent.Codec.Anthropic do
   defp wire_stop_reason(:stop_sequence), do: "stop_sequence"
 
   defp wire_usage(usage),
-    do: %{"input_tokens" => usage[:input_tokens] || 0, "output_tokens" => usage[:output_tokens] || 0}
+    do: %{
+      "input_tokens" => usage[:input_tokens] || 0,
+      "output_tokens" => usage[:output_tokens] || 0
+    }
 
   defp describe(reason) when is_binary(reason), do: reason
   defp describe(reason), do: inspect(reason)
@@ -337,7 +360,12 @@ defmodule LLMAgent.Codec.Anthropic do
     do: %{"type" => "thinking", "thinking" => text, "signature" => ""}
 
   defp encode_block(%{type: :tool_call} = block),
-    do: %{"type" => "tool_use", "id" => block.id, "name" => block.name, "input" => block.input || %{}}
+    do: %{
+      "type" => "tool_use",
+      "id" => block.id,
+      "name" => block.name,
+      "input" => block.input || %{}
+    }
 
   @doc "An error body in Anthropic's envelope, with the error type chosen from the HTTP status."
   @spec encode_error(pos_integer(), String.t()) :: wire()

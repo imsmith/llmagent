@@ -58,7 +58,9 @@ defmodule LLMAgent.Tool.DispatcherTest do
       }
 
       assert {:ok, 6} =
-               Dispatcher.compute("function.compute.double", "double", %{"n" => 3}, policy: policy)
+               Dispatcher.compute("function.compute.double", "double", %{"n" => 3},
+                 policy: policy
+               )
     end
 
     test "accepts an ad directly" do
@@ -81,7 +83,13 @@ defmodule LLMAgent.Tool.DispatcherTest do
 
   describe "kind check" do
     test "returns :kind_not_supported when ad doesn't implement requested kind" do
-      a = ad(%{coordinate: "function.action_only", kinds: [:action], binding: {:module, StubAction}})
+      a =
+        ad(%{
+          coordinate: "function.action_only",
+          kinds: [:action],
+          binding: {:module, StubAction}
+        })
+
       :ok = Discovery.register(a)
 
       policy = %Policy{allow: ["function.action_only"], fidelity_min: :authoritative}
@@ -93,11 +101,12 @@ defmodule LLMAgent.Tool.DispatcherTest do
 
   describe "binding lookup" do
     test "returns :binding_not_supported for unknown binding kind" do
-      a = ad(%{
-        coordinate: "function.weirdbind",
-        binding: {:nonexistent_binding, :something},
-        kinds: [:compute]
-      })
+      a =
+        ad(%{
+          coordinate: "function.weirdbind",
+          binding: {:nonexistent_binding, :something},
+          kinds: [:compute]
+        })
 
       :ok = Discovery.register(a)
       policy = %Policy{allow: ["function.weirdbind"], fidelity_min: :authoritative}
@@ -109,11 +118,12 @@ defmodule LLMAgent.Tool.DispatcherTest do
 
   describe "act/5" do
     test "passes idempotency key through" do
-      a = ad(%{
-        coordinate: "function.acttest",
-        kinds: [:action],
-        binding: {:module, StubAction}
-      })
+      a =
+        ad(%{
+          coordinate: "function.acttest",
+          kinds: [:action],
+          binding: {:module, StubAction}
+        })
 
       :ok = Discovery.register(a)
       policy = %Policy{allow: ["function.acttest"], fidelity_min: :authoritative}
@@ -136,12 +146,13 @@ defmodule LLMAgent.Tool.DispatcherTest do
 
       :ok = LLMAgent.Tool.Bindings.register(:stub_gen, StubGen)
 
-      a = ad(%{
-        id: "gen.test.1",
-        coordinate: "compute.llm.chat",
-        kinds: [:generate],
-        binding: {:stub_gen, %{model: "stub-1"}}
-      })
+      a =
+        ad(%{
+          id: "gen.test.1",
+          coordinate: "compute.llm.chat",
+          kinds: [:generate],
+          binding: {:stub_gen, %{model: "stub-1"}}
+        })
 
       :ok = Discovery.update(a)
 

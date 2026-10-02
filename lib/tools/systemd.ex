@@ -49,40 +49,47 @@ defmodule LLMAgent.Tools.Systemd do
       binding: {:module, __MODULE__},
       operational: %{
         actions: %{
-          "status"  => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
-          "list"    => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
-          "start"   => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
-          "stop"    => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "status" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "list" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "start" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "stop" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
           "restart" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
         }
       },
       constraint: %{
         idempotency: %{
-          "status"  => :idempotent,
-          "list"    => :idempotent,
-          "start"   => :non_idempotent,
-          "stop"    => :non_idempotent,
+          "status" => :idempotent,
+          "list" => :idempotent,
+          "start" => :non_idempotent,
+          "stop" => :non_idempotent,
           "restart" => :non_idempotent
         },
         blast_radius: %{
-          "status"  => :local,
-          "list"    => :local,
-          "start"   => :system,
-          "stop"    => :system,
+          "status" => :local,
+          "list" => :local,
+          "start" => :system,
+          "stop" => :system,
           "restart" => :system
         }
       },
       affordance: %{
-        declared: [%{
-          intent: "inspect and control systemd units",
-          suits: "service management on Linux hosts",
-          avoid_when: "the target host doesn't run systemd"
-        }],
+        declared: [
+          %{
+            intent: "inspect and control systemd units",
+            suits: "service management on Linux hosts",
+            avoid_when: "the target host doesn't run systemd"
+          }
+        ],
         learned: [],
         open: false
       },
       fidelity: :authoritative,
-      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      provenance: %{
+        source: "llmagent.builtin",
+        produced_at: ~U[2026-05-18 00:00:00Z],
+        based_on: [],
+        signature: nil
+      },
       lease: :permanent,
       meta: %{}
     })
@@ -136,22 +143,46 @@ defmodule LLMAgent.Tools.Systemd do
         {:ok, %{output: props, metadata: %{unit: unit, active: active}}}
 
       {out, code} ->
-        {:error, ErrorStruct.new("command_failed", "unit", "systemctl show failed (exit #{code}): #{String.trim(out)}")}
+        {:error,
+         ErrorStruct.new(
+           "command_failed",
+           "unit",
+           "systemctl show failed (exit #{code}): #{String.trim(out)}"
+         )}
     end
   end
 
-  def perform("start", %{"unit" => unit}), do: run_systemctl(["start", unit], %{unit: unit, action: "start"})
-  def perform("stop", %{"unit" => unit}), do: run_systemctl(["stop", unit], %{unit: unit, action: "stop"})
-  def perform("restart", %{"unit" => unit}), do: run_systemctl(["restart", unit], %{unit: unit, action: "restart"})
+  def perform("start", %{"unit" => unit}),
+    do: run_systemctl(["start", unit], %{unit: unit, action: "start"})
+
+  def perform("stop", %{"unit" => unit}),
+    do: run_systemctl(["stop", unit], %{unit: unit, action: "stop"})
+
+  def perform("restart", %{"unit" => unit}),
+    do: run_systemctl(["restart", unit], %{unit: unit, action: "restart"})
 
   def perform("list", _args) do
-    case System.cmd("systemctl", ["list-units", "--type=service", "--state=running", "--no-pager", "--plain", "--no-legend"], stderr_to_stdout: true) do
+    case System.cmd(
+           "systemctl",
+           [
+             "list-units",
+             "--type=service",
+             "--state=running",
+             "--no-pager",
+             "--plain",
+             "--no-legend"
+           ], stderr_to_stdout: true) do
       {out, 0} ->
         services = parse_list_units(out)
         {:ok, %{output: services, metadata: %{action: "list", count: length(services)}}}
 
       {out, code} ->
-        {:error, ErrorStruct.new("command_failed", "systemctl", "systemctl list-units failed (exit #{code}): #{String.trim(out)}")}
+        {:error,
+         ErrorStruct.new(
+           "command_failed",
+           "systemctl",
+           "systemctl list-units failed (exit #{code}): #{String.trim(out)}"
+         )}
     end
   end
 
@@ -160,8 +191,16 @@ defmodule LLMAgent.Tools.Systemd do
 
   defp run_systemctl(args, metadata) do
     case System.cmd("systemctl", args, stderr_to_stdout: true) do
-      {out, 0} -> {:ok, %{output: String.trim(out), metadata: metadata}}
-      {out, code} -> {:error, ErrorStruct.new("command_failed", "systemctl", "systemctl failed (exit #{code}): #{String.trim(out)}")}
+      {out, 0} ->
+        {:ok, %{output: String.trim(out), metadata: metadata}}
+
+      {out, code} ->
+        {:error,
+         ErrorStruct.new(
+           "command_failed",
+           "systemctl",
+           "systemctl failed (exit #{code}): #{String.trim(out)}"
+         )}
     end
   end
 
@@ -181,10 +220,13 @@ defmodule LLMAgent.Tools.Systemd do
     |> String.split("\n", trim: true)
     |> Enum.map(fn line ->
       parts = String.split(line, ~r/\s+/, trim: true)
+
       case parts do
         [unit, load, active, sub | desc] ->
           %{unit: unit, load: load, active: active, sub: sub, description: Enum.join(desc, " ")}
-        _ -> nil
+
+        _ ->
+          nil
       end
     end)
     |> Enum.reject(&is_nil/1)

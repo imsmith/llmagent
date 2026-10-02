@@ -115,11 +115,16 @@ defmodule LLMAgent.TupleSpace.Space do
 
     {woken, remaining_waiters} = dispatch_waiters(tuple, state)
 
-    Events.emit(:out, "tuple_space.out", %{
-      space: state.name,
-      tuple: tuple,
-      waiters_woken: woken
-    }, __MODULE__)
+    Events.emit(
+      :out,
+      "tuple_space.out",
+      %{
+        space: state.name,
+        tuple: tuple,
+        waiters_woken: woken
+      },
+      __MODULE__
+    )
 
     {:noreply, %{state | waiters: remaining_waiters}}
   end
@@ -133,10 +138,15 @@ defmodule LLMAgent.TupleSpace.Space do
       [first | _] ->
         consume_one(state.table, first)
 
-        Events.emit(:in, "tuple_space.in", %{
-          space: state.name,
-          tuple: first
-        }, __MODULE__)
+        Events.emit(
+          :in,
+          "tuple_space.in",
+          %{
+            space: state.name,
+            tuple: first
+          },
+          __MODULE__
+        )
 
         {:reply, {:ok, first}, state}
 
@@ -153,10 +163,15 @@ defmodule LLMAgent.TupleSpace.Space do
       [first | _] ->
         consume_one(state.table, first)
 
-        Events.emit(:in, "tuple_space.in", %{
-          space: state.name,
-          tuple: first
-        }, __MODULE__)
+        Events.emit(
+          :in,
+          "tuple_space.in",
+          %{
+            space: state.name,
+            tuple: first
+          },
+          __MODULE__
+        )
 
         {:reply, {:ok, first}, state}
 
@@ -270,10 +285,15 @@ defmodule LLMAgent.TupleSpace.Space do
         Process.cancel_timer(waiter.timer)
         Process.demonitor(waiter.monitor, [:flush])
 
-        Events.emit(:in, "tuple_space.in", %{
-          space: state.name,
-          tuple: tuple
-        }, __MODULE__)
+        Events.emit(
+          :in,
+          "tuple_space.in",
+          %{
+            space: state.name,
+            tuple: tuple
+          },
+          __MODULE__
+        )
 
         {1, rest_after_in}
     end

@@ -45,8 +45,8 @@ defmodule LLMAgent.Tools.Agent do
       binding: {:module, __MODULE__},
       operational: %{
         actions: %{
-          "start"  => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
-          "stop"   => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "start" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "stop" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
           "status" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
         }
       },
@@ -55,16 +55,23 @@ defmodule LLMAgent.Tools.Agent do
         blast_radius: %{"start" => :system, "stop" => :system, "status" => :local}
       },
       affordance: %{
-        declared: [%{
-          intent: "spawn, monitor, and terminate sub-agents",
-          suits: "decomposing work into sub-agents that report back via the tuple space",
-          avoid_when: "the work is a single tool call — overhead isn't worth it"
-        }],
+        declared: [
+          %{
+            intent: "spawn, monitor, and terminate sub-agents",
+            suits: "decomposing work into sub-agents that report back via the tuple space",
+            avoid_when: "the work is a single tool call — overhead isn't worth it"
+          }
+        ],
         learned: [],
         open: false
       },
       fidelity: :authoritative,
-      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      provenance: %{
+        source: "llmagent.builtin",
+        produced_at: ~U[2026-05-18 00:00:00Z],
+        based_on: [],
+        signature: nil
+      },
       lease: :permanent,
       meta: %{}
     })
@@ -108,7 +115,9 @@ defmodule LLMAgent.Tools.Agent do
 
   def perform("kill", %{"name" => name}) when is_binary(name) do
     case AgentSupervisor.stop_agent(String.to_atom(name)) do
-      :ok -> {:ok, %{output: "ok", metadata: %{action: "kill"}}}
+      :ok ->
+        {:ok, %{output: "ok", metadata: %{action: "kill"}}}
+
       {:error, :not_found} ->
         {:error, ErrorStruct.new("not_found", "name", "agent #{name} not found")}
     end
@@ -147,8 +156,7 @@ defmodule LLMAgent.Tools.Agent do
     cond do
       caller_parent != nil ->
         {:error,
-         ErrorStruct.new("spawn_depth_exceeded", nil,
-           "child agents cannot spawn further agents")}
+         ErrorStruct.new("spawn_depth_exceeded", nil, "child agents cannot spawn further agents")}
 
       true ->
         spawn_with_mode(mode, name, prompt, tools, caller_name, args)
@@ -182,22 +190,18 @@ defmodule LLMAgent.Tools.Agent do
           {:ok, {:agent_result, ^name_atom, content}} ->
             AgentSupervisor.stop_agent(name_atom)
 
-            {:ok,
-             %{output: content, metadata: %{action: "spawn", mode: "sync", name: name}}}
+            {:ok, %{output: content, metadata: %{action: "spawn", mode: "sync", name: name}}}
 
           {:error, :timeout} ->
             AgentSupervisor.stop_agent(name_atom)
 
             {:error,
-             ErrorStruct.new("timeout", "timeout",
-               "agent :#{name} timed out after #{timeout}ms")}
+             ErrorStruct.new("timeout", "timeout", "agent :#{name} timed out after #{timeout}ms")}
 
           {:error, reason} ->
             AgentSupervisor.stop_agent(name_atom)
 
-            {:error,
-             ErrorStruct.new("spawn_failed", nil,
-               "sync wait failed: #{inspect(reason)}")}
+            {:error, ErrorStruct.new("spawn_failed", nil, "sync wait failed: #{inspect(reason)}")}
         end
 
       {:error, reason} ->

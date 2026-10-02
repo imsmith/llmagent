@@ -7,19 +7,20 @@ defmodule LLMAgent.ToolAdTest do
     test "builds an ad with required fields" do
       now = DateTime.utc_now()
 
-      ad = ToolAd.new(%{
-        id: "builtin.example",
-        coordinate: "function.example",
-        kinds: [:compute],
-        binding: {:module, SomeMod},
-        operational: %{actions: %{}},
-        constraint: %{idempotency: %{}, blast_radius: %{}},
-        affordance: %{declared: [], learned: [], open: false},
-        fidelity: :authoritative,
-        provenance: %{source: "test", produced_at: now, based_on: [], signature: nil},
-        lease: :permanent,
-        meta: %{}
-      })
+      ad =
+        ToolAd.new(%{
+          id: "builtin.example",
+          coordinate: "function.example",
+          kinds: [:compute],
+          binding: {:module, SomeMod},
+          operational: %{actions: %{}},
+          constraint: %{idempotency: %{}, blast_radius: %{}},
+          affordance: %{declared: [], learned: [], open: false},
+          fidelity: :authoritative,
+          provenance: %{source: "test", produced_at: now, based_on: [], signature: nil},
+          lease: :permanent,
+          meta: %{}
+        })
 
       assert ad.id == "builtin.example"
       assert ad.coordinate == "function.example"

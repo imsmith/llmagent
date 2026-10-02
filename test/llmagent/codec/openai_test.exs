@@ -26,7 +26,7 @@ defmodule LLMAgent.Codec.OpenAITest do
     name
     |> WireFixtures.read()
     |> String.split("\n")
-    |> Enum.filter(&(String.starts_with?(&1, "data: {")))
+    |> Enum.filter(&String.starts_with?(&1, "data: {"))
     |> Enum.map(&(&1 |> String.replace_prefix("data: ", "") |> Jason.decode!()))
     |> Enum.find_value(& &1["usage"])
   end
@@ -40,14 +40,27 @@ defmodule LLMAgent.Codec.OpenAITest do
       assert result.stop_reason == :end_turn
 
       usage = recorded_usage(name)
-      assert result.usage == %{input_tokens: usage["prompt_tokens"], output_tokens: usage["completion_tokens"]}
+
+      assert result.usage == %{
+               input_tokens: usage["prompt_tokens"],
+               output_tokens: usage["completion_tokens"]
+             }
+
       assert is_binary(result.model)
     end
 
     test "a single tool call folds to reasoning then the call" do
-      assert {:ok, result} = "openai_tool_stream.sse" |> WireFixtures.read() |> List.wrap() |> decode() |> fold()
+      assert {:ok, result} =
+               "openai_tool_stream.sse"
+               |> WireFixtures.read()
+               |> List.wrap()
+               |> decode()
+               |> fold()
 
-      assert [%{type: :reasoning}, %{type: :tool_call, name: "get_weather", input: %{"city" => "Paris"}}] =
+      assert [
+               %{type: :reasoning},
+               %{type: :tool_call, name: "get_weather", input: %{"city" => "Paris"}}
+             ] =
                result.message.content
 
       assert result.stop_reason == :tool_use
@@ -56,7 +69,11 @@ defmodule LLMAgent.Codec.OpenAITest do
     test "two tool calls get distinct ids and canonical indices 1 and 2" do
       events = decode([WireFixtures.read("openai_two_tools_stream.sse")])
 
-      assert [{0, :reasoning}, {1, {:tool_call, id_a, "get_weather"}}, {2, {:tool_call, id_b, "get_weather"}}] =
+      assert [
+               {0, :reasoning},
+               {1, {:tool_call, id_a, "get_weather"}},
+               {2, {:tool_call, id_b, "get_weather"}}
+             ] =
                for({:block_start, index, kind} <- events, do: {index, kind})
 
       assert id_a != id_b
@@ -68,7 +85,11 @@ defmodule LLMAgent.Codec.OpenAITest do
 
     test "truncation by max_tokens is reported as :max_tokens" do
       assert {:ok, %{stop_reason: :max_tokens}} =
-               "openai_max_tokens_stream.sse" |> WireFixtures.read() |> List.wrap() |> decode() |> fold()
+               "openai_max_tokens_stream.sse"
+               |> WireFixtures.read()
+               |> List.wrap()
+               |> decode()
+               |> fold()
     end
 
     test "feeding one byte at a time gives the same events as feeding whole" do
@@ -85,14 +106,17 @@ defmodule LLMAgent.Codec.OpenAITest do
         final =
           Enum.reduce(events, nil, fn
             {:block_start, index, _kind}, open ->
-              assert open == nil, "#{name}: block #{index} started while #{inspect(open)} was open"
+              assert open == nil,
+                     "#{name}: block #{index} started while #{inspect(open)} was open"
+
               index
 
             {:block_stop, index}, open ->
               assert open == index, name
               nil
 
-            {delta, index, _data}, open when delta in [:text_delta, :reasoning_delta, :tool_args_delta] ->
+            {delta, index, _data}, open
+            when delta in [:text_delta, :reasoning_delta, :tool_args_delta] ->
               assert open == index, name
               open
 
@@ -121,7 +145,9 @@ defmodule LLMAgent.Codec.OpenAITest do
     end
 
     test "finish_stream/1 after a complete stream adds nothing" do
-      {_events, state} = OpenAI.decode_stream(OpenAI.stream_decoder(), WireFixtures.read("openai_text_stream.sse"))
+      {_events, state} =
+        OpenAI.decode_stream(OpenAI.stream_decoder(), WireFixtures.read("openai_text_stream.sse"))
+
       assert OpenAI.finish_stream(state) == []
     end
   end
@@ -130,28 +156,46 @@ defmodule LLMAgent.Codec.OpenAITest do
     defp sse(chunks), do: Enum.map_join(chunks, &("data: " <> Jason.encode!(&1) <> "\n\n"))
 
     defp chunk(delta, finish \\ nil),
-      do: %{"model" => "m", "choices" => [%{"index" => 0, "delta" => delta, "finish_reason" => finish}]}
+      do: %{
+        "model" => "m",
+        "choices" => [%{"index" => 0, "delta" => delta, "finish_reason" => finish}]
+      }
 
     defp tool(index, id, name, args),
-      do: %{"tool_calls" => [%{"index" => index, "id" => id, "function" => %{"name" => name, "arguments" => args}}]}
+      do: %{
+        "tool_calls" => [
+          %{"index" => index, "id" => id, "function" => %{"name" => name, "arguments" => args}}
+        ]
+      }
 
-    defp more_args(index, args), do: %{"tool_calls" => [%{"index" => index, "function" => %{"arguments" => args}}]}
+    defp more_args(index, args),
+      do: %{"tool_calls" => [%{"index" => index, "function" => %{"arguments" => args}}]}
 
     defp no_delta_on_a_closed_block(events) do
       Enum.reduce(events, nil, fn
-        {:block_start, index, _}, _open -> index
-        {:block_stop, _index}, _open -> nil
+        {:block_start, index, _}, _open ->
+          index
+
+        {:block_stop, _index}, _open ->
+          nil
+
         {tag, index, _}, open when tag in [:text_delta, :reasoning_delta, :tool_args_delta] ->
           assert index == open, "delta for block #{index} while #{inspect(open)} was open"
           open
-        _other, open -> open
+
+        _other, open ->
+          open
       end)
     end
 
     test "arguments for a tool call that was already closed by another tool call are an error" do
       events =
         decode([
-          sse([chunk(tool(0, "a", "f", "{")), chunk(tool(1, "b", "g", "{}")), chunk(more_args(0, "}"))])
+          sse([
+            chunk(tool(0, "a", "f", "{")),
+            chunk(tool(1, "b", "g", "{}")),
+            chunk(more_args(0, "}"))
+          ])
         ])
 
       no_delta_on_a_closed_block(events)
@@ -160,7 +204,14 @@ defmodule LLMAgent.Codec.OpenAITest do
     end
 
     test "arguments for a tool call that was already closed by text are an error" do
-      events = decode([sse([chunk(tool(0, "a", "f", "{")), chunk(%{"content" => "hi"}), chunk(more_args(0, "}"))])])
+      events =
+        decode([
+          sse([
+            chunk(tool(0, "a", "f", "{")),
+            chunk(%{"content" => "hi"}),
+            chunk(more_args(0, "}"))
+          ])
+        ])
 
       no_delta_on_a_closed_block(events)
       assert {:error, {:out_of_order_tool_call, 0}} in events
@@ -241,7 +292,13 @@ defmodule LLMAgent.Codec.OpenAITest do
           %{
             role: :user,
             content: [
-              %{type: :tool_result, tool_call_id: "call_1", content: [text("sunny")], is_error: false, extra: %{}},
+              %{
+                type: :tool_result,
+                tool_call_id: "call_1",
+                content: [text("sunny")],
+                is_error: false,
+                extra: %{}
+              },
               text("thanks")
             ],
             extra: %{}
@@ -263,7 +320,8 @@ defmodule LLMAgent.Codec.OpenAITest do
       }
     end
 
-    defp encode(turn), do: turn |> OpenAI.encode_request("performer-model") |> Jason.encode!() |> Jason.decode!()
+    defp encode(turn),
+      do: turn |> OpenAI.encode_request("performer-model") |> Jason.encode!() |> Jason.decode!()
 
     test "uses the performer's model, not the client's" do
       assert encode(turn())["model"] == "performer-model"
@@ -292,7 +350,9 @@ defmodule LLMAgent.Codec.OpenAITest do
       assistant = Enum.find(messages, &(&1["role"] == "assistant"))
       tool = Enum.find(messages, &(&1["role"] == "tool"))
 
-      assert [%{"id" => "call_1", "type" => "function", "function" => function}] = assistant["tool_calls"]
+      assert [%{"id" => "call_1", "type" => "function", "function" => function}] =
+               assistant["tool_calls"]
+
       assert function["name"] == "get_weather"
       assert Jason.decode!(function["arguments"]) == %{"city" => "Paris"}
 
@@ -303,7 +363,12 @@ defmodule LLMAgent.Codec.OpenAITest do
     test "tools, tool_choice and params are carried" do
       body = encode(turn())
 
-      assert [%{"type" => "function", "function" => %{"name" => "get_weather", "parameters" => %{"type" => "object"}}}] =
+      assert [
+               %{
+                 "type" => "function",
+                 "function" => %{"name" => "get_weather", "parameters" => %{"type" => "object"}}
+               }
+             ] =
                body["tools"]
 
       assert body["tool_choice"] == "auto"
@@ -337,7 +402,14 @@ defmodule LLMAgent.Codec.OpenAITest do
 
     test "a system message between a tool call and its result does not separate them" do
       call = %{type: :tool_call, id: "c1", name: "f", input: %{}, input_json: "{}", extra: %{}}
-      result = %{type: :tool_result, tool_call_id: "c1", content: [text("done")], is_error: false, extra: %{}}
+
+      result = %{
+        type: :tool_result,
+        tool_call_id: "c1",
+        content: [text("done")],
+        is_error: false,
+        extra: %{}
+      }
 
       turn = %Turn{
         messages: [
@@ -356,7 +428,14 @@ defmodule LLMAgent.Codec.OpenAITest do
     test "an image in a tool result reaches the performer instead of vanishing" do
       call = %{type: :tool_call, id: "c1", name: "read", input: %{}, input_json: "{}", extra: %{}}
       image = %{type: :image, media_type: "image/png", data: "AAAA", extra: %{}}
-      result = %{type: :tool_result, tool_call_id: "c1", content: [image], is_error: false, extra: %{}}
+
+      result = %{
+        type: :tool_result,
+        tool_call_id: "c1",
+        content: [image],
+        is_error: false,
+        extra: %{}
+      }
 
       turn = %Turn{
         messages: [
@@ -369,14 +448,26 @@ defmodule LLMAgent.Codec.OpenAITest do
       assert tool["role"] == "tool"
       assert tool["content"] != ""
       assert user["role"] == "user"
-      assert Enum.any?(user["content"], &(&1["type"] == "image_url" and &1["image_url"]["url"] == "data:image/png;base64,AAAA"))
+
+      assert Enum.any?(
+               user["content"],
+               &(&1["type"] == "image_url" and
+                   &1["image_url"]["url"] == "data:image/png;base64,AAAA")
+             )
     end
 
     test "an image becomes an image_url part with a data URL" do
       image = %{type: :image, media_type: "image/png", data: "AAAA", extra: %{}}
       body = encode(%Turn{messages: [%{role: :user, content: [text("look"), image], extra: %{}}]})
 
-      assert [%{"content" => [%{"type" => "text", "text" => "look"}, %{"type" => "image_url", "image_url" => url}]}] =
+      assert [
+               %{
+                 "content" => [
+                   %{"type" => "text", "text" => "look"},
+                   %{"type" => "image_url", "image_url" => url}
+                 ]
+               }
+             ] =
                body["messages"]
 
       assert url["url"] == "data:image/png;base64,AAAA"

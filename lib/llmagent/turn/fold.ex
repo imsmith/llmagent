@@ -51,14 +51,18 @@ defmodule LLMAgent.Turn.Fold do
     do: put_block(state, index, %{type: :reasoning, text: "", extra: %{}})
 
   def step(state, {:block_start, index, {:tool_call, id, name}}),
-    do: put_block(state, index, %{type: :tool_call, id: id, name: name, input_json: "", extra: %{}})
+    do:
+      put_block(state, index, %{type: :tool_call, id: id, name: name, input_json: "", extra: %{}})
 
   def step(state, {:text_delta, index, text}), do: append(state, index, :text, text)
   def step(state, {:reasoning_delta, index, text}), do: append(state, index, :text, text)
   def step(state, {:tool_args_delta, index, json}), do: append(state, index, :input_json, json)
   def step(state, {:block_stop, _index}), do: state
   def step(state, {:stop, reason, usage}), do: %{state | stop: {reason, usage}}
-  def step(%__MODULE__{error: nil} = state, {:error, reason}), do: %{state | error: {:error, reason}}
+
+  def step(%__MODULE__{error: nil} = state, {:error, reason}),
+    do: %{state | error: {:error, reason}}
+
   def step(state, {:error, _reason}), do: state
 
   @doc """

@@ -51,7 +51,7 @@ defmodule LLMAgent.Utils.RequireBinary do
   def check_many(bins) do
     missing =
       bins
-      |> Enum.reject(&(System.find_executable(&1)))
+      |> Enum.reject(&System.find_executable(&1))
       |> Enum.map(fn bin ->
         msg = "Required binary '#{bin}' not found in PATH."
         log_event(bin, msg)

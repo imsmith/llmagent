@@ -7,7 +7,9 @@ defmodule LLMAgent.MCP.Transport.HTTPTest do
 
   describe "start/1" do
     test "returns state with url and headers" do
-      {:ok, state} = HTTP.start(url: "https://example.com/mcp", headers: [{"authorization", "Bearer tok"}])
+      {:ok, state} =
+        HTTP.start(url: "https://example.com/mcp", headers: [{"authorization", "Bearer tok"}])
+
       assert state.url == "https://example.com/mcp"
       assert state.headers == [{"authorization", "Bearer tok"}]
     end
@@ -34,14 +36,19 @@ defmodule LLMAgent.MCP.Transport.HTTPTest do
 
         conn
         |> Plug.Conn.put_resp_content_type("application/json")
-        |> Plug.Conn.send_resp(200, Jason.encode!(%{
-          "jsonrpc" => "2.0",
-          "id" => 1,
-          "result" => %{"tools" => []}
-        }))
+        |> Plug.Conn.send_resp(
+          200,
+          Jason.encode!(%{
+            "jsonrpc" => "2.0",
+            "id" => 1,
+            "result" => %{"tools" => []}
+          })
+        )
       end)
 
-      {:ok, state} = HTTP.start(url: "https://example.com/mcp", plug: {Req.Test, LLMAgent.MCP.Transport.HTTP})
+      {:ok, state} =
+        HTTP.start(url: "https://example.com/mcp", plug: {Req.Test, LLMAgent.MCP.Transport.HTTP})
+
       request = %{method: "tools/list", params: %{}, id: 1}
       {{:ok, result}, _new_state} = HTTP.send_request(state, request)
       assert result == %{"tools" => []}
@@ -51,14 +58,19 @@ defmodule LLMAgent.MCP.Transport.HTTPTest do
       Req.Test.stub(LLMAgent.MCP.Transport.HTTP, fn conn ->
         conn
         |> Plug.Conn.put_resp_content_type("application/json")
-        |> Plug.Conn.send_resp(200, Jason.encode!(%{
-          "jsonrpc" => "2.0",
-          "id" => 1,
-          "error" => %{"code" => -32600, "message" => "Invalid request"}
-        }))
+        |> Plug.Conn.send_resp(
+          200,
+          Jason.encode!(%{
+            "jsonrpc" => "2.0",
+            "id" => 1,
+            "error" => %{"code" => -32600, "message" => "Invalid request"}
+          })
+        )
       end)
 
-      {:ok, state} = HTTP.start(url: "https://example.com/mcp", plug: {Req.Test, LLMAgent.MCP.Transport.HTTP})
+      {:ok, state} =
+        HTTP.start(url: "https://example.com/mcp", plug: {Req.Test, LLMAgent.MCP.Transport.HTTP})
+
       request = %{method: "initialize", params: %{}, id: 1}
       {{:error, error}, _state} = HTTP.send_request(state, request)
       assert error.code == -32600
@@ -70,7 +82,9 @@ defmodule LLMAgent.MCP.Transport.HTTPTest do
         Plug.Conn.send_resp(conn, 500, "Internal server error")
       end)
 
-      {:ok, state} = HTTP.start(url: "https://example.com/mcp", plug: {Req.Test, LLMAgent.MCP.Transport.HTTP})
+      {:ok, state} =
+        HTTP.start(url: "https://example.com/mcp", plug: {Req.Test, LLMAgent.MCP.Transport.HTTP})
+
       request = %{method: "initialize", params: %{}, id: 1}
       {{:error, _reason}, _state} = HTTP.send_request(state, request)
     end

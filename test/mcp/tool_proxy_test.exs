@@ -8,10 +8,12 @@ defmodule LLMAgent.MCP.ToolProxyTest do
 
   setup do
     :persistent_term.put(@tool_map_key, %{})
+
     on_exit(fn ->
       :persistent_term.put(@tool_map_key, %{})
       Process.delete(:comn_context)
     end)
+
     :ok
   end
 
@@ -27,11 +29,16 @@ defmodule LLMAgent.MCP.ToolProxyTest do
     test "routes to connection GenServer and returns result" do
       # Start a mock GenServer that handles {:call_tool, tool, args}
       # It self-registers in init so the key pid is the mock_conn process itself
-      {:ok, mock_conn} = GenServer.start_link(LLMAgent.MCP.ToolProxyTest.MockConnection, :test_server)
+      {:ok, mock_conn} =
+        GenServer.start_link(LLMAgent.MCP.ToolProxyTest.MockConnection, :test_server)
 
       # Populate the tool map
       :persistent_term.put(@tool_map_key, %{
-        test_server_my_tool: %{connection: :test_server, tool: "my_tool", description: "A test tool"}
+        test_server_my_tool: %{
+          connection: :test_server,
+          tool: "my_tool",
+          description: "A test tool"
+        }
       })
 
       # Set context (what the agent does before dispatching)

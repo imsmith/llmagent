@@ -60,58 +60,72 @@ defmodule LLMAgent.Tool.Adapter do
   @type child_status :: term()
 
   @doc "Execute a read-only query. Pure, idempotent, no side effects."
-  @callback query(payload(), action :: String.t(), args :: map(),
-                  opts :: keyword()) ::
+  @callback query(payload(), action :: String.t(), args :: map(), opts :: keyword()) ::
               {:ok, value(), meta()} | {:error, error_reason()}
 
   @doc "Execute an action with side effects. Accepts optional idempotency_key to prevent duplicate effects."
-  @callback act(payload(), action :: String.t(), args :: map(),
-                idempotency_key :: String.t() | nil, opts :: keyword()) ::
+  @callback act(
+              payload(),
+              action :: String.t(),
+              args :: map(),
+              idempotency_key :: String.t() | nil,
+              opts :: keyword()
+            ) ::
               {:ok, ack(), meta()} | {:error, error_reason()}
 
   @doc "Subscribe to stream updates."
-  @callback subscribe(payload(), action :: String.t(), args :: map(),
-                      subscriber :: pid(), opts :: keyword()) ::
+  @callback subscribe(
+              payload(),
+              action :: String.t(),
+              args :: map(),
+              subscriber :: pid(),
+              opts :: keyword()
+            ) ::
               {:ok, reference()} | {:error, error_reason()}
 
   @doc "Unsubscribe from stream updates."
-  @callback unsubscribe(payload(), sub_ref :: reference(),
-                        opts :: keyword()) :: :ok
+  @callback unsubscribe(payload(), sub_ref :: reference(), opts :: keyword()) :: :ok
 
   @doc "Compute a pure value — no I/O, no side effects."
-  @callback compute(payload(), action :: String.t(), args :: map(),
-                    opts :: keyword()) ::
+  @callback compute(payload(), action :: String.t(), args :: map(), opts :: keyword()) ::
               {:ok, value()} | {:error, error_reason()}
 
   @doc "Produce a stochastic output. Retryable but not cacheable."
-  @callback generate(payload(), action :: String.t(), args :: map(),
-                     opts :: keyword()) ::
+  @callback generate(payload(), action :: String.t(), args :: map(), opts :: keyword()) ::
               {:ok, value(), meta()} | {:error, error_reason()}
 
   @doc "Participate in a coordination session."
-  @callback participate(payload(), role :: atom(), args :: map(),
-                        opts :: keyword()) ::
+  @callback participate(payload(), role :: atom(), args :: map(), opts :: keyword()) ::
               {:ok, reference()} | {:error, error_reason()}
 
   @doc "Leave a coordination session."
-  @callback leave(payload(), participation_ref :: reference(),
-                  opts :: keyword()) :: :ok
+  @callback leave(payload(), participation_ref :: reference(), opts :: keyword()) :: :ok
 
   @doc "Spawn a child process."
-  @callback spawn_child(payload(), spec :: child_spec(),
-                        opts :: keyword()) ::
+  @callback spawn_child(payload(), spec :: child_spec(), opts :: keyword()) ::
               {:ok, child_ref()} | {:error, error_reason()}
 
   @doc "Query the status of a child process."
-  @callback child_status(payload(), child_ref :: child_ref(),
-                         opts :: keyword()) :: child_status()
+  @callback child_status(payload(), child_ref :: child_ref(), opts :: keyword()) :: child_status()
 
   @doc "Terminate a child process with the given reason."
-  @callback terminate_child(payload(), child_ref :: child_ref(),
-                            reason :: terminate_reason(), opts :: keyword()) ::
+  @callback terminate_child(
+              payload(),
+              child_ref :: child_ref(),
+              reason :: terminate_reason(),
+              opts :: keyword()
+            ) ::
               :ok | {:error, error_reason()}
 
-  @optional_callbacks query: 4, act: 5, subscribe: 5, unsubscribe: 3, compute: 4,
-                      generate: 4, participate: 4, leave: 3, spawn_child: 3,
-                      child_status: 3, terminate_child: 4
+  @optional_callbacks query: 4,
+                      act: 5,
+                      subscribe: 5,
+                      unsubscribe: 3,
+                      compute: 4,
+                      generate: 4,
+                      participate: 4,
+                      leave: 3,
+                      spawn_child: 3,
+                      child_status: 3,
+                      terminate_child: 4
 end

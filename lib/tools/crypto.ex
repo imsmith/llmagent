@@ -148,29 +148,34 @@ defmodule LLMAgent.Tools.Crypto do
   def perform("generate_keypair", %{"type" => "ed25519"}) do
     {pub, priv} = :crypto.generate_key(:eddsa, :ed25519)
 
-    {:ok, %{
-      output: %{
-        type: "ed25519",
-        private_key: Base.encode64(priv),
-        public_key: Base.encode64(pub)
-      },
-      metadata: %{type: "ed25519"}
-    }}
+    {:ok,
+     %{
+       output: %{
+         type: "ed25519",
+         private_key: Base.encode64(priv),
+         public_key: Base.encode64(pub)
+       },
+       metadata: %{type: "ed25519"}
+     }}
   end
 
   def perform("generate_keypair", %{"type" => "ecdsa"}) do
     {:ECPrivateKey, _, priv, params, pub, _} =
       :public_key.generate_key({:namedCurve, :secp256r1})
 
-    {:ok, %{
-      output: %{
-        type: "ecdsa",
-        curve: "secp256r1",
-        private_key: Base.encode64(:erlang.term_to_binary({:ECPrivateKey, 1, priv, params, pub, :asn1_NOVALUE})),
-        public_key: Base.encode64(pub)
-      },
-      metadata: %{type: "ecdsa", curve: "secp256r1"}
-    }}
+    {:ok,
+     %{
+       output: %{
+         type: "ecdsa",
+         curve: "secp256r1",
+         private_key:
+           Base.encode64(
+             :erlang.term_to_binary({:ECPrivateKey, 1, priv, params, pub, :asn1_NOVALUE})
+           ),
+         public_key: Base.encode64(pub)
+       },
+       metadata: %{type: "ecdsa", curve: "secp256r1"}
+     }}
   end
 
   def perform("sign", %{
@@ -197,16 +202,18 @@ defmodule LLMAgent.Tools.Crypto do
       result = :crypto.verify(:eddsa, :none, data, sig, [pub, :ed25519])
       {:ok, %{output: result, metadata: %{type: "ed25519", action: "verify"}}}
     else
-      _ -> {:error, ErrorStruct.new("invalid_key", "public_key", "Invalid Ed25519 signature or public key")}
+      _ ->
+        {:error,
+         ErrorStruct.new("invalid_key", "public_key", "Invalid Ed25519 signature or public key")}
     end
   end
 
   def perform("verify", %{
-    "type" => "ecdsa",
-    "data" => data,
-    "signature" => sig64,
-    "public_key" => pem64
-  }) do
+        "type" => "ecdsa",
+        "data" => data,
+        "signature" => sig64,
+        "public_key" => pem64
+      }) do
     with {:ok, sig} <- Base.decode64(sig64),
          {:ok, pem_bin} <- Base.decode64(pem64),
          [entry] <- :public_key.pem_decode(pem_bin),
@@ -214,7 +221,13 @@ defmodule LLMAgent.Tools.Crypto do
          result <- :public_key.verify(data, :sha256, sig, pub_key) do
       {:ok, %{output: result, metadata: %{type: "ecdsa", action: "verify"}}}
     else
-      _ -> {:error, ErrorStruct.new("invalid_key", "public_key", "Invalid ECDSA signature or public key format")}
+      _ ->
+        {:error,
+         ErrorStruct.new(
+           "invalid_key",
+           "public_key",
+           "Invalid ECDSA signature or public key format"
+         )}
     end
   end
 
@@ -233,8 +246,11 @@ defmodule LLMAgent.Tools.Crypto do
     encoding = Map.get(args, "encoding", "base16")
 
     case Encoder.call(encoding, %{"data" => raw}) do
-      {:ok, encoded} -> {:ok, %{output: encoded, metadata: Map.put(metadata, :encoding, encoding)}}
-      {:error, _} = err -> err
+      {:ok, encoded} ->
+        {:ok, %{output: encoded, metadata: Map.put(metadata, :encoding, encoding)}}
+
+      {:error, _} = err ->
+        err
     end
   end
 end

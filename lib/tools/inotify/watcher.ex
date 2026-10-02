@@ -81,19 +81,27 @@ defmodule LLMAgent.Tools.Inotify.Watcher do
       bin ->
         if File.exists?(path) do
           id = state.next_id
-          port = Port.open({:spawn_executable, bin}, [
-            :binary,
-            :exit_status,
-            {:line, 4096},
-            {:args, ["-m", "--format", "%e %w%f", path]}
-          ])
+
+          port =
+            Port.open({:spawn_executable, bin}, [
+              :binary,
+              :exit_status,
+              {:line, 4096},
+              {:args, ["-m", "--format", "%e %w%f", path]}
+            ])
 
           watch = %{port: port, path: path, events: []}
           watches = Map.put(state.watches, id, watch)
 
-          LLMAgent.Events.emit(:watch_started, "tool.inotify", %{
-            watch_id: id, path: path
-          }, __MODULE__)
+          LLMAgent.Events.emit(
+            :watch_started,
+            "tool.inotify",
+            %{
+              watch_id: id,
+              path: path
+            },
+            __MODULE__
+          )
 
           {:reply, {:ok, id}, %{state | watches: watches, next_id: id + 1}}
         else
@@ -128,9 +136,16 @@ defmodule LLMAgent.Tools.Inotify.Watcher do
           _ -> :ok
         end
 
-        LLMAgent.Events.emit(:watch_stopped, "tool.inotify", %{
-          watch_id: watch_id, path: watch.path, final_event_count: length(final_events)
-        }, __MODULE__)
+        LLMAgent.Events.emit(
+          :watch_stopped,
+          "tool.inotify",
+          %{
+            watch_id: watch_id,
+            path: watch.path,
+            final_event_count: length(final_events)
+          },
+          __MODULE__
+        )
 
         {:reply, {:ok, final_events}, %{state | watches: watches}}
     end
@@ -170,9 +185,16 @@ defmodule LLMAgent.Tools.Inotify.Watcher do
       {id, watch} ->
         event = parse_event(line)
 
-        LLMAgent.Events.emit(:fs_event, "tool.inotify.event", %{
-          watch_id: id, event: event.event, path: event.path
-        }, __MODULE__)
+        LLMAgent.Events.emit(
+          :fs_event,
+          "tool.inotify.event",
+          %{
+            watch_id: id,
+            event: event.event,
+            path: event.path
+          },
+          __MODULE__
+        )
 
         updated = %{watch | events: [event | watch.events]}
         %{state | watches: Map.put(state.watches, id, updated)}

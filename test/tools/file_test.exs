@@ -89,8 +89,11 @@ defmodule LLMAgent.Tools.FileTest do
       }
 
       assert {:ok, _ack, _meta} =
-               Dispatcher.act("resource.fs.file", "write",
-                 %{"path" => path, "content" => "hi"}, nil, policy: policy)
+               Dispatcher.act(
+                 "resource.fs.file",
+                 "write",
+                 %{"path" => path, "content" => "hi"},
+                 nil, policy: policy)
 
       assert Elixir.File.read!(path) == "hi"
     end

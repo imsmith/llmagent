@@ -23,13 +23,13 @@ defmodule LLMAgent.Tool.Kinds do
   @key :llmagent_tool_kinds
 
   @canonical %{
-    query:      LLMAgent.Tool.Kinds.Query,
-    action:     LLMAgent.Tool.Kinds.Action,
-    stream:     LLMAgent.Tool.Kinds.Stream,
-    compute:    LLMAgent.Tool.Kinds.Compute,
+    query: LLMAgent.Tool.Kinds.Query,
+    action: LLMAgent.Tool.Kinds.Action,
+    stream: LLMAgent.Tool.Kinds.Stream,
+    compute: LLMAgent.Tool.Kinds.Compute,
     coordinate: LLMAgent.Tool.Kinds.Coordinate,
-    spawn:      LLMAgent.Tool.Kinds.SpawnKind,
-    generate:   LLMAgent.Tool.Kinds.Generate
+    spawn: LLMAgent.Tool.Kinds.SpawnKind,
+    generate: LLMAgent.Tool.Kinds.Generate
   }
 
   @doc "Seed the registry with the canonical seven kinds."

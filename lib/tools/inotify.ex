@@ -33,16 +33,23 @@ defmodule LLMAgent.Tools.Inotify do
         blast_radius: %{"watch" => :local}
       },
       affordance: %{
-        declared: [%{
-          intent: "subscribe to filesystem events for a path",
-          suits: "fs change detection",
-          avoid_when: "the path does not exist yet"
-        }],
+        declared: [
+          %{
+            intent: "subscribe to filesystem events for a path",
+            suits: "fs change detection",
+            avoid_when: "the path does not exist yet"
+          }
+        ],
         learned: [],
         open: false
       },
       fidelity: :authoritative,
-      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
+      provenance: %{
+        source: "llmagent.builtin",
+        produced_at: ~U[2026-05-18 00:00:00Z],
+        based_on: [],
+        signature: nil
+      },
       lease: :permanent,
       meta: %{}
     })
@@ -121,9 +128,13 @@ defmodule LLMAgent.Tools.Inotify do
         {:ok, %{output: watch_id, metadata: %{path: path, status: :watching}}}
 
       {:error, :missing_binary} ->
-        {:error, ErrorStruct.new("missing_binary", "inotifywait",
-          "inotifywait not found in PATH",
-          "Install inotify-tools: apt install inotify-tools")}
+        {:error,
+         ErrorStruct.new(
+           "missing_binary",
+           "inotifywait",
+           "inotifywait not found in PATH",
+           "Install inotify-tools: apt install inotify-tools"
+         )}
 
       {:error, :path_not_found} ->
         {:error, ErrorStruct.new("not_found", "path", "Path does not exist: #{path}")}

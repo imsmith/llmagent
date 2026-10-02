@@ -54,17 +54,18 @@ defmodule LLMAgent.Discovery.PortAdapter do
   @impl true
   def init(opts) do
     Process.flag(:trap_exit, true)
-    cmd  = Keyword.fetch!(opts, :command)
+    cmd = Keyword.fetch!(opts, :command)
     args = Keyword.get(opts, :args, [])
-    env  = Keyword.get(opts, :env, [])
+    env = Keyword.get(opts, :env, [])
 
-    port = Port.open({:spawn_executable, cmd}, [
-      :binary,
-      :exit_status,
-      {:line, 65_536},
-      {:args, args},
-      {:env, env}
-    ])
+    port =
+      Port.open({:spawn_executable, cmd}, [
+        :binary,
+        :exit_status,
+        {:line, 65_536},
+        {:args, args},
+        {:env, env}
+      ])
 
     # Recorded at open time: once the port has closed, Port.info/2 returns nil
     # and the pid needed to signal the child is gone with it.

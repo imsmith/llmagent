@@ -13,6 +13,7 @@ defmodule LLMAgent.Discovery.PortAdapterTest do
 
   defp script_lines(ad) do
     {:ok, register_line} = Wire.encode_register(ad)
+
     [
       "EMIT " <> register_line,
       "SLEEP 3000",
@@ -35,11 +36,11 @@ defmodule LLMAgent.Discovery.PortAdapterTest do
       kinds: [:generate],
       binding: {:openai_chat, %{api_host: "http://h:8080", model: "m"}},
       operational: %{actions: %{}, model_id: "m"},
-      constraint:  %{idempotency: %{}, blast_radius: %{}},
-      affordance:  %{declared: [], learned: [], open: true},
-      fidelity:    :authoritative,
-      provenance:  %{source: "test", produced_at: DateTime.utc_now(), based_on: [], signature: nil},
-      lease:       {:expires_at, DateTime.add(DateTime.utc_now(), 60)}
+      constraint: %{idempotency: %{}, blast_radius: %{}},
+      affordance: %{declared: [], learned: [], open: true},
+      fidelity: :authoritative,
+      provenance: %{source: "test", produced_at: DateTime.utc_now(), based_on: [], signature: nil},
+      lease: {:expires_at, DateTime.add(DateTime.utc_now(), 60)}
     })
   end
 
@@ -47,12 +48,14 @@ defmodule LLMAgent.Discovery.PortAdapterTest do
     ad = sample_ad()
     script_path = write_script(script_lines(ad))
 
-    {:ok, pid} = PortAdapter.start_link(
-      name: :test_adapter,
-      command: System.find_executable("elixir"),
-      args: ["-r", "test/support/fake_shim.exs", "-e", ":timer.sleep(5000)"],
-      env: [{~c"LLMAGENT_FAKE_SHIM_SCRIPT", String.to_charlist(script_path)}]
-    )
+    {:ok, pid} =
+      PortAdapter.start_link(
+        name: :test_adapter,
+        command: System.find_executable("elixir"),
+        args: ["-r", "test/support/fake_shim.exs", "-e", ":timer.sleep(5000)"],
+        env: [{~c"LLMAGENT_FAKE_SHIM_SCRIPT", String.to_charlist(script_path)}]
+      )
+
     Process.unlink(pid)
 
     # Elixir VM boots in ~50ms here; EMIT register fires immediately after.
@@ -73,19 +76,22 @@ defmodule LLMAgent.Discovery.PortAdapterTest do
   end
 
   test "skips malformed lines without crashing" do
-    script_path = write_script([
-      "EMIT not valid edn",
-      "EMIT {:event :register :ad bogus}",
-      "SLEEP 30",
-      "EXIT 0"
-    ])
+    script_path =
+      write_script([
+        "EMIT not valid edn",
+        "EMIT {:event :register :ad bogus}",
+        "SLEEP 30",
+        "EXIT 0"
+      ])
 
-    {:ok, pid} = PortAdapter.start_link(
-      name: :test_adapter_2,
-      command: System.find_executable("elixir"),
-      args: ["-r", "test/support/fake_shim.exs", "-e", ":timer.sleep(5000)"],
-      env: [{~c"LLMAGENT_FAKE_SHIM_SCRIPT", String.to_charlist(script_path)}]
-    )
+    {:ok, pid} =
+      PortAdapter.start_link(
+        name: :test_adapter_2,
+        command: System.find_executable("elixir"),
+        args: ["-r", "test/support/fake_shim.exs", "-e", ":timer.sleep(5000)"],
+        env: [{~c"LLMAGENT_FAKE_SHIM_SCRIPT", String.to_charlist(script_path)}]
+      )
+
     Process.unlink(pid)
 
     # The shim processes the malformed lines and exits cleanly.

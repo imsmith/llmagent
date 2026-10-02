@@ -1,6 +1,7 @@
 defmodule LLMAgent.Tool.KindsTest do
   @moduledoc false
-  use ExUnit.Case, async: false   # mutates persistent_term
+  # mutates persistent_term
+  use ExUnit.Case, async: false
 
   alias LLMAgent.Tool.Kinds
 
