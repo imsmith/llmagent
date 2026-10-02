@@ -470,10 +470,10 @@ LLMAgent.Utils.Encoder.call("base64", %{"data" => "hello"})
 ```elixir
 defp deps do
   [
-    {:req, "~> 0.5.0"},          # HTTP client
+    {:req, "~> 0.5"},            # HTTP client
     {:jason, "~> 1.4"},          # JSON
     {:b58, "~> 1.0"},            # Base58 encoding
-    {:comn, github: "imsmith/comn", tag: "v0.4.0"},
+    {:comn, github: "imsmith/comn", tag: "v0.5.2"},
     {:mix_test_watch, "~> 1.1", only: [:dev], runtime: false}
   ]
 end

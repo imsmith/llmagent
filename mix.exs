@@ -35,11 +35,11 @@ defmodule LLMAgent.MixProject do
       {:bypass, "~> 2.1", only: :test},
       {:telemetry_test, "~> 0.1", only: :test},
       {:plug, "~> 1.16", only: [:test]},
-      {:req, "~> 0.5.0"},
+      {:req, "~> 0.5"},
       {:jason, "~> 1.4"},
       {:b58, "~> 1.0"},
       {:eden, "~> 2.1"},
-      {:comn, github: "imsmith/comn", tag: "v0.4.0"}
+      {:comn, github: "imsmith/comn", tag: "v0.5.2"}
     ]
   end
 end
