@@ -14,12 +14,13 @@ defmodule LLMAgent.ToolQueryTest do
     end
 
     test "accepts explicit kinds, fidelity_min, limit" do
-      q = ToolQuery.new(%{
-        coordinate: "resource.network.netif",
-        kinds: [:query],
-        fidelity_min: :trained,
-        limit: 5
-      })
+      q =
+        ToolQuery.new(%{
+          coordinate: "resource.network.netif",
+          kinds: [:query],
+          fidelity_min: :trained,
+          limit: 5
+        })
 
       assert q.kinds == [:query]
       assert q.fidelity_min == :trained
@@ -31,6 +32,11 @@ defmodule LLMAgent.ToolQueryTest do
     test "exact match" do
       assert ToolQuery.coordinate_matches?("resource.network.netif", "resource.network.netif")
       refute ToolQuery.coordinate_matches?("resource.network.netif", "resource.network.dns")
+    end
+
+    test "a lone star matches everything" do
+      assert ToolQuery.coordinate_matches?("*", "resource.network.netif")
+      assert ToolQuery.coordinate_matches?("*", "x")
     end
 
     test "trailing-star prefix match" do

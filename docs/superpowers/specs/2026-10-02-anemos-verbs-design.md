@@ -65,6 +65,25 @@ not reachable from a policy.
 coordinate, kinds, idempotency and blast radius — what agento's rules view
 and a future `explain` can show next to the rule that calls it.
 
+### Everything
+
+`ToolQuery` gained a pattern: `"*"` alone matches every coordinate. It is
+what the attachment subscribes with. The same vocabulary is used by
+`%Policy{}` rules, so `allow: ["*"]` now means everything, where before it
+silently matched nothing.
+
+### What the review added
+
+- A tool runs in its own process with a deadline (`:verb_timeout_ms`,
+  default 4000). Raise, exit, re-entry into the runtime, or a slow call all
+  come back to the rule as `{:error, _}`; the dispatcher is never the
+  casualty.
+- The attachment is the authority: a verb asks it, per call, for the policy
+  and the coordinate behind its name. Stopped attachment, `{:error, :detached}`.
+- A name keeps its first coordinate until that coordinate leaves. A later
+  coordinate that maps to the same name is warned about and not reachable.
+- `require_approval` rules are refused at start: nothing can answer.
+
 ## Rulings
 
 1. **The bridge lives in llmagent**, which now depends on anemos. The
