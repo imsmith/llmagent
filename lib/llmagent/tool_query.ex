@@ -78,6 +78,7 @@ defmodule LLMAgent.ToolQuery do
 
   - bare string: exact match
   - trailing `.*`: prefix match (matches the prefix itself, or prefix followed by `.<anything>`)
+  - `*` alone: every coordinate
   - no other glob forms
 
   ## Examples
@@ -95,9 +96,10 @@ defmodule LLMAgent.ToolQuery do
       false
   """
   @spec coordinate_matches?(String.t(), String.t()) :: boolean()
-  def coordinate_matches?(pattern, coordinate) when is_binary(pattern) and is_binary(coordinate) do
+  def coordinate_matches?(pattern, coordinate)
+      when is_binary(pattern) and is_binary(coordinate) do
     cond do
-      pattern == coordinate ->
+      pattern == coordinate or pattern == "*" ->
         true
 
       String.ends_with?(pattern, ".*") ->

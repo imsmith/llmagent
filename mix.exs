@@ -39,6 +39,7 @@ defmodule LLMAgent.MixProject do
       {:jason, "~> 1.4"},
       {:b58, "~> 1.0"},
       {:ex_edn, path: "../ex_edn"},
+      {:anemos, path: "../anemos"},
       {:comn, github: "imsmith/comn", tag: "v0.5.2"}
     ]
   end
