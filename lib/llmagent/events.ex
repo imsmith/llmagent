@@ -58,6 +58,9 @@ defmodule LLMAgent.Events do
     LLMAgent.EventLog.record(event)
     LLMAgent.DurableLog.record(event)
     LLMAgent.EventBus.broadcast(topic, event)
+    # Once more on "*", for a subscriber that wants every event — the
+    # Registry behind the bus has no wildcard.
+    LLMAgent.EventBus.broadcast(LLMAgent.Anemos.Events.every_topic(), event)
     :ok
   rescue
     _ -> :ok

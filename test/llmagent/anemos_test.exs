@@ -105,7 +105,11 @@ defmodule LLMAgent.AnemosTest do
   end
 
   test "a policy that requires approval is refused at start", %{rt: rt} do
-    assert {:error, {{:require_approval_not_supported, ["x"]}, _}} =
+    start_supervised!(
+      Supervisor.child_spec({Anemos.Runtime, name: :"#{rt}_other"}, id: :other_rt)
+    )
+
+    assert {:error, reason} =
              start_supervised(
                Supervisor.child_spec(
                  {LLMAgent.Anemos,
@@ -113,6 +117,8 @@ defmodule LLMAgent.AnemosTest do
                  id: :approving
                )
              )
+
+    assert inspect(reason) =~ "require_approval_not_supported"
   end
 
   test "an odd argument list is refused before anything is dispatched", %{rt: rt} do

@@ -84,6 +84,12 @@ silently matched nothing.
   coordinate that maps to the same name is warned about and not reachable.
 - `require_approval` rules are refused at start: nothing can answer.
 
+### Amended by item 3
+
+`LLMAgent.Anemos` became a supervisor over `LLMAgent.Anemos.Tools` (what
+this spec describes) and `LLMAgent.Anemos.Events`; see
+`2026-10-02-anemos-events-design.md`.
+
 ## Rulings
 
 1. **The bridge lives in llmagent**, which now depends on anemos. The
