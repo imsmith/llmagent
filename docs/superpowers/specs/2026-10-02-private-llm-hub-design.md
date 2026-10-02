@@ -25,10 +25,11 @@ hub: server-side folding, stored actions, server-run tools) get their own specs.
 
 Checked on 2026-10-02 by running them, not by reading.
 
-- `skynet001` (`10.10.1.226:8080`, `gemma-4-26B-A4B-it-Q4_K_M.gguf`, `n_ctx`
-  262144, 4 slots) and `skynet002` (`10.10.1.229:8080`,
-  `mistral-7b-instruct-v0.2.Q8_0.gguf`, `n_ctx` 32768, 4 slots) are both
-  advertised over mDNS as `_llama._tcp` with `api=openai-compatible`.
+- Two llama.cpp hosts, `skynet001` (`10.10.1.226:8080`) and `skynet002`
+  (`10.10.1.229:8080`), are advertised over mDNS as `_llama._tcp` with
+  `api=openai-compatible`. Each advertisement carries the loaded model, its
+  `n_ctx`, and its slot count. The models loaded on the day of checking are
+  incidental; either host can serve a different one tomorrow.
 - `priv/discovery/avahi-llama.tcl` turns those into ads with coordinate
   `compute.llm.chat`, kinds `[:generate]`, binding
   `[:openai_chat {:api_host … :model …}]`, fidelity `:authoritative`,
@@ -280,7 +281,19 @@ An Anemos failure (parse error, rule crash) falls through to the static
 fallback and emits an error event. Routing policy cannot take the hub down.
 
 This is where `claude-*` model ids are mapped, for example Claude Code's small
-background model to `skynet002` and its main model to `skynet001`.
+background model to one host and its main model to another.
+
+**Nothing in the hub names a model.** Hosts change what they serve.
+
+- The default performer and any static alias in the config name a *host*, and
+  resolve to whatever that host advertises at the time of the turn.
+- Anemos rules are given each candidate's advertised facts (host, model id,
+  `n_ctx`, slots) and can choose on those rather than on a model name.
+- `GET /v1/models` is a live projection of current ads. A client that asks for
+  a model id no longer advertised falls through to the default performer.
+- A host swapping its model must replace its ad in the registry, not add a
+  second one. Whether the mDNS shim does this today is unverified; the plan
+  covers it with a fake-source integration test before relying on it.
 
 ### Turn log
 
@@ -366,14 +379,13 @@ Each step ends in something that runs.
 
 ## Risks
 
-- Claude Code offers roughly twenty tools and a very large system prompt. A
-  26B gemma will be weak at that loadout. The hub cannot fix model quality.
-- Four slots per server, and Claude Code issues background requests in
-  parallel with the main one. Routing the small-model traffic to `skynet002`
+- Claude Code offers roughly twenty tools and a very large system prompt.
+  Small local models will be weak at that loadout, and some have no usable
+  tool-calling template at all. The hub cannot fix model quality; which model
+  a host serves is the operator's choice, outside this design.
+- Slots per host are finite, and Claude Code issues background requests in
+  parallel with the main one. Routing background traffic to a second host
   mitigates it; queueing is not designed here.
-- `mistral-7b-instruct-v0.2` has a 32k context and may not have a usable
-  tool-calling template. Whether it can serve even the background traffic is
-  unverified.
 - `agento` depends on `llmagent` by path (`../llmagent`), which breaks in a git
   worktree. The hub half is built in `~/github/agento` against
   `~/github/llmagent`, so the substrate half must be merged there first.
