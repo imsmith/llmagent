@@ -163,6 +163,43 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatStreamTest do
     assert Task.await(performer, 5_000) == :closed
   end
 
+  # A killed performer: the socket closes with the chunked body unterminated.
+  test "a performer that dies mid-reply is an error, and the stream is told" do
+    raw = WireFixtures.read("openai_text_stream.sse")
+    head = binary_part(raw, 0, div(byte_size(raw), 2))
+    {:ok, listen} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
+    {:ok, port} = :inet.port(listen)
+
+    performer =
+      Task.async(fn ->
+        {:ok, socket} = :gen_tcp.accept(listen, 5_000)
+        {:ok, _request} = :gen_tcp.recv(socket, 0, 5_000)
+
+        :ok =
+          :gen_tcp.send(socket, [
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n",
+            Integer.to_string(byte_size(head), 16),
+            "\r\n",
+            head,
+            "\r\n"
+          ])
+
+        Process.sleep(100)
+        :gen_tcp.close(socket)
+      end)
+
+    payload = %{api_host: "http://localhost:#{port}", model: "performer-model"}
+
+    assert {:error, reason} = OpenAIChat.generate(payload, "chat", %{turn: turn()}, into: collector())
+    refute reason == :halted
+    Task.await(performer, 5_000)
+
+    events = received_events()
+    assert match?({:start, _}, hd(events))
+    assert {:error, _} = List.last(events)
+    assert Enum.count(events, &match?({:error, _}, &1)) == 1
+  end
+
   defp drain(socket) do
     case :gen_tcp.recv(socket, 0, 3_000) do
       {:ok, _more_request_bytes} -> drain(socket)

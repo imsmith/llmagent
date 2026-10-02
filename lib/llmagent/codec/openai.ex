@@ -16,6 +16,12 @@ defmodule LLMAgent.Codec.OpenAI do
   the conversation becomes `user` text, and adjacent messages of the same
   role are merged.
 
+  A performer expects every `tool` message directly after the assistant
+  message that made the calls, so anything that would fall between them —
+  a system reminder turned into user text — is moved to after the results.
+  An image inside a tool result cannot ride in a `tool` message; it follows
+  in a user message.
+
   This is a protocol crossing, so every `extra` map is dropped and
   `:reasoning` blocks are not sent back to the performer.
 
@@ -28,6 +34,12 @@ defmodule LLMAgent.Codec.OpenAI do
 
   The `:stop` event is held until `data: [DONE]`, because usage arrives in a
   chunk after the one carrying the finish reason.
+
+  The decoder is fed by performers and never raises on what they send. A
+  chunk of the wrong shape ends the stream with `{:error, {:bad_frame, _}}`.
+  Arguments arriving for a tool call whose block has already been stopped
+  end it with `{:error, {:out_of_order_tool_call, wire_index}}`: a delta is
+  never emitted for a closed block.
   """
 
   alias LLMAgent.Codec.SSE
@@ -95,7 +107,8 @@ defmodule LLMAgent.Codec.OpenAI do
         text -> [%{"role" => "system", "content" => text}]
       end
 
-    leading ++ (messages |> Enum.flat_map(&encode_message/1) |> merge_adjacent())
+    leading ++
+      (messages |> Enum.flat_map(&encode_message/1) |> keep_tool_results_adjacent() |> merge_adjacent())
   end
 
   defp encode_message(%{role: :system, content: content}) do
@@ -122,12 +135,14 @@ defmodule LLMAgent.Codec.OpenAI do
   # Tool results come first: a performer expects every tool message directly
   # after the assistant message that made the calls.
   defp encode_message(%{role: :user, content: content}) do
-    results =
-      for %{type: :tool_result} = block <- content do
-        %{"role" => "tool", "tool_call_id" => block.tool_call_id, "content" => block_text(block.content)}
-      end
+    results = for %{type: :tool_result} = block <- content, do: encode_tool_result(block)
 
-    parts = content |> Enum.flat_map(&encode_part/1)
+    # A tool message carries text only, so images a tool returned travel in
+    # the user message that follows.
+    result_images =
+      for %{type: :tool_result, content: inner} <- content, %{type: :image} = image <- inner, do: image
+
+    parts = Enum.flat_map(result_images ++ content, &encode_part/1)
 
     user =
       cond do
@@ -137,6 +152,16 @@ defmodule LLMAgent.Codec.OpenAI do
       end
 
     results ++ user
+  end
+
+  defp encode_tool_result(block) do
+    content =
+      case {block_text(block.content), Enum.any?(block.content, &(&1.type == :image))} do
+        {"", true} -> "[image attached below]"
+        {text, _} -> text
+      end
+
+    %{"role" => "tool", "tool_call_id" => block.tool_call_id, "content" => content}
   end
 
   defp encode_part(%{type: :text, text: text}), do: [%{"type" => "text", "text" => text}]
@@ -168,6 +193,30 @@ defmodule LLMAgent.Codec.OpenAI do
   end
 
   defp join_text(parts), do: Enum.map_join(parts, "\n\n", & &1["text"])
+
+  # While an assistant message's tool calls are still owed results, a user
+  # message is held back and released after the last of them.
+  defp keep_tool_results_adjacent(messages) do
+    {acc, _owed, held} =
+      Enum.reduce(messages, {[], 0, []}, fn
+        %{"role" => "assistant", "tool_calls" => calls} = message, {acc, _owed, held} ->
+          {[message | held ++ acc], length(calls), []}
+
+        %{"role" => "tool"} = message, {acc, owed, held} when owed > 1 ->
+          {[message | acc], owed - 1, held}
+
+        %{"role" => "tool"} = message, {acc, _owed, held} ->
+          {held ++ [message | acc], 0, []}
+
+        %{"role" => "user"} = message, {acc, owed, held} when owed > 0 ->
+          {acc, owed, [message | held]}
+
+        message, {acc, _owed, held} ->
+          {[message | held ++ acc], 0, []}
+      end)
+
+    Enum.reverse(held ++ acc)
+  end
 
   defp merge_adjacent(messages) do
     messages
@@ -239,11 +288,43 @@ defmodule LLMAgent.Codec.OpenAI do
 
   defp decode_frame(%{data: data}, state) do
     case Jason.decode(data) do
-      {:ok, %{"error" => error}} -> fail(state, {:upstream, error})
-      {:ok, %{} = chunk} -> decode_chunk(chunk, state)
+      {:ok, %{"error" => error}} when not is_nil(error) -> fail(state, {:upstream, error})
+      {:ok, %{} = chunk} -> if well_formed?(chunk), do: decode_chunk(chunk, state), else: fail(state, {:bad_frame, data})
       _ -> fail(state, {:bad_frame, data})
     end
   end
+
+  # Everything decode_chunk/2 reads, checked once so that nothing below has
+  # to defend against a performer sending the wrong type.
+  defp well_formed?(chunk) do
+    choices = chunk["choices"] || []
+
+    optional?(chunk["usage"], &is_map/1) and optional?(chunk["model"], &is_binary/1) and
+      is_list(choices) and Enum.all?(choices, &well_formed_choice?/1)
+  end
+
+  defp well_formed_choice?(%{} = choice) do
+    delta = choice["delta"] || %{}
+    calls = (is_map(delta) && delta["tool_calls"]) || []
+
+    optional?(choice["finish_reason"], &is_binary/1) and is_map(delta) and
+      optional?(delta["content"], &is_binary/1) and optional?(delta["reasoning_content"], &is_binary/1) and
+      is_list(calls) and Enum.all?(calls, &well_formed_call?/1)
+  end
+
+  defp well_formed_choice?(_other), do: false
+
+  defp well_formed_call?(%{} = call) do
+    function = call["function"] || %{}
+
+    optional?(call["index"], &is_integer/1) and optional?(call["id"], &is_binary/1) and is_map(function) and
+      optional?(function["name"], &is_binary/1) and optional?(function["arguments"], &is_binary/1)
+  end
+
+  defp well_formed_call?(_other), do: false
+
+  defp optional?(nil, _check), do: true
+  defp optional?(value, check), do: check.(value)
 
   defp terminate(state) do
     {closing, state} = close_open(state)
@@ -285,9 +366,13 @@ defmodule LLMAgent.Codec.OpenAI do
     {text, state} = text_delta(delta["content"], :text, :text_delta, state)
 
     {calls, state} =
-      Enum.reduce(delta["tool_calls"] || [], {[], state}, fn call, {acc, state} ->
-        {events, state} = tool_delta(call, state)
-        {acc ++ events, state}
+      Enum.reduce(delta["tool_calls"] || [], {[], state}, fn
+        _call, {acc, %__MODULE__{done: true} = state} ->
+          {acc, state}
+
+        call, {acc, state} ->
+          {events, state} = tool_delta(call, state)
+          {acc ++ events, state}
       end)
 
     {reasoning ++ text ++ calls, state}
@@ -304,6 +389,16 @@ defmodule LLMAgent.Codec.OpenAI do
     wire_index = call["index"] || 0
     function = call["function"] || %{}
 
+    case state.tools do
+      %{^wire_index => index} when state.open != {index, {:tool, wire_index}} ->
+        fail(state, {:out_of_order_tool_call, wire_index})
+
+      _ ->
+        tool_args(call, wire_index, function, state)
+    end
+  end
+
+  defp tool_args(call, wire_index, function, state) do
     {opening, index, state} =
       case state.tools do
         %{^wire_index => index} ->
@@ -342,6 +437,7 @@ defmodule LLMAgent.Codec.OpenAI do
   defp close_open(%__MODULE__{open: {index, _kind}} = state), do: {[{:block_stop, index}], %{state | open: nil}}
 
   defp decode_finish(nil, state), do: {[], state}
+  defp decode_finish(_reason, %__MODULE__{done: true} = state), do: {[], state}
 
   defp decode_finish(reason, state) do
     {closing, state} = close_open(state)

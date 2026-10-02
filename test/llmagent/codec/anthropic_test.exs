@@ -149,6 +149,28 @@ defmodule LLMAgent.Codec.AnthropicTest do
       assert message =~ "tool"
     end
 
+    test "still refuses an unknown top-level block such as a document", %{wire: wire} do
+      bad = %{"role" => "user", "content" => [%{"type" => "document", "source" => %{}}]}
+      wire = Map.update!(wire, "messages", &(&1 ++ [bad]))
+
+      assert {:error, {:unsupported, message}} = Anthropic.decode_request(wire)
+      assert message =~ "document"
+    end
+
+    test "a known block missing a required field is invalid, not unsupported", %{wire: wire} do
+      for block <- [%{"type" => "tool_use", "name" => "f"}, %{"type" => "text"}, %{"type" => "tool_result"}] do
+        wire = Map.update!(wire, "messages", &(&1 ++ [%{"role" => "user", "content" => [block]}]))
+        assert {:error, {:invalid, _}} = Anthropic.decode_request(wire), inspect(block)
+      end
+    end
+
+    test "an image whose source is not an object is invalid, never a raise", %{wire: wire} do
+      bad = %{"role" => "user", "content" => [%{"type" => "image", "source" => "oops"}]}
+      wire = Map.update!(wire, "messages", &(&1 ++ [bad]))
+
+      assert {:error, {:invalid, _}} = Anthropic.decode_request(wire)
+    end
+
     test "refuses messages that are missing or not a list", %{wire: wire} do
       assert {:error, {:invalid, _}} = Anthropic.decode_request(Map.delete(wire, "messages"))
       assert {:error, {:invalid, _}} = Anthropic.decode_request(Map.put(wire, "messages", "not-a-list"))
@@ -160,6 +182,43 @@ defmodule LLMAgent.Codec.AnthropicTest do
 
       assert {:error, {:unsupported, _}} = Anthropic.decode_request(wire)
       assert_raise ArgumentError, fn -> String.to_existing_atom(role) end
+    end
+  end
+
+  describe "decode_request/1 on blocks a long-lived session accumulates" do
+    setup do
+      {:ok, wire: WireFixtures.json("claude_code_followup_request.json")}
+    end
+
+    test "redacted thinking is carried as reasoning and never reaches an OpenAI performer", %{wire: wire} do
+      redacted = %{"role" => "assistant", "content" => [%{"type" => "redacted_thinking", "data" => "opaque"}, %{"type" => "text", "text" => "hi"}]}
+      wire = Map.update!(wire, "messages", &(&1 ++ [redacted]))
+
+      assert {:ok, turn} = Anthropic.decode_request(wire)
+      assert [%{type: :reasoning, text: "", extra: extra}, %{type: :text}] = List.last(turn.messages).content
+      assert extra["redacted_thinking"]["data"] == "opaque"
+
+      refute turn |> OpenAI.encode_request("m") |> Jason.encode!() =~ "opaque"
+    end
+
+    test "an unknown block inside a tool result degrades to a text marker", %{wire: wire} do
+      result = %{
+        "role" => "user",
+        "content" => [
+          %{
+            "type" => "tool_result",
+            "tool_use_id" => "t1",
+            "content" => [%{"type" => "tool_reference", "tool_name" => "Bash"}, %{"type" => "text", "text" => "found"}]
+          }
+        ]
+      }
+
+      wire = Map.update!(wire, "messages", &(&1 ++ [result]))
+
+      assert {:ok, turn} = Anthropic.decode_request(wire)
+      assert [%{type: :tool_result, content: [marker, %{type: :text, text: "found"}]}] = List.last(turn.messages).content
+      assert %{type: :text, text: text, extra: %{"omitted" => %{"type" => "tool_reference"}}} = marker
+      assert text =~ "tool_reference"
     end
   end
 

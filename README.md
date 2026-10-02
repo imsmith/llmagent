@@ -527,7 +527,7 @@ System binaries used by tools: `bash`, `ip`, `ping`, `dig`, `ps`, `systemctl`, `
 ## Tests
 
 ```sh
-mix test    # 130 doctests, 532 tests
+mix test    # 130 doctests, 544 tests
 ```
 
 Coverage includes agent lifecycle (multi-turn tool loops, stop/restart, concurrent agents, context propagation, event ordering, memory persistence, DurableLog reconstruction), all 12 native tools, MCP client integration (transport, connection lifecycle, tool discovery, proxy dispatch, facade API), event wiring, context enrichment, durable event persistence, error handling, and the turn-shaped generate path (both codecs against recorded wire traffic, the streaming adapter, and dispatch under policy).

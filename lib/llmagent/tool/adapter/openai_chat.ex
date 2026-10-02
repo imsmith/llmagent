@@ -34,7 +34,9 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChat do
     * `{:error, :incomplete_stream}` — the reply ended without finishing;
       `into` is passed the `:error` event first
     * `{:error, reason}` — transport failure, or an error the performer
-      reported inside the stream
+      reported inside the stream. If the reply had already started, `into`
+      is passed `{:error, reason}` first, so a stream in flight is never
+      left without an ending.
   """
 
   @behaviour LLMAgent.Tool.Adapter
@@ -52,6 +54,9 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChat do
   def generate(%{api_host: host, model: model}, "chat", %{turn: %Turn{} = turn}, opts) do
     into = Keyword.get(opts, :into, fn _event -> :cont end)
     started = System.monotonic_time(:millisecond)
+    # Set once reply bytes arrive. The decoder state rides in the response,
+    # which Req does not hand back when the transport fails mid-reply.
+    replying = :atomics.new(1, [])
 
     request = [
       json: Codec.OpenAI.encode_request(%{turn | stream: true}, model),
@@ -59,6 +64,7 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChat do
       retry: false,
       compressed: false,
       into: fn {:data, data}, {req, resp} ->
+        if resp.status == 200, do: :atomics.put(replying, 1, 1)
         {verdict, state} = receive_data(resp.status, data, stream_state(resp), into)
         {verdict, {req, Req.Response.put_private(resp, :llmagent_turn, state)}}
       end
@@ -67,7 +73,9 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChat do
     case Req.post("#{host}/chat/completions", request) do
       {:ok, %Req.Response{status: 200} = resp} -> finish(stream_state(resp), into, model, started)
       {:ok, %Req.Response{status: status} = resp} -> {:error, {:http_error, status, error_body(stream_state(resp))}}
-      {:error, reason} -> {:error, reason}
+      {:error, reason} ->
+        if :atomics.get(replying, 1) == 1, do: into.({:error, reason})
+        {:error, reason}
     end
   end
 

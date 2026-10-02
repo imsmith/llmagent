@@ -71,7 +71,8 @@ defmodule LLMAgent.Codec.SSETest do
       |> then(&("data: " <> &1 <> "\n\n"))
 
     {at, 2} = :binary.match(frame, "é")
-    <<head::binary-size(at + 1), tail::binary>> = frame
+    split = at + 1
+    <<head::binary-size(^split), tail::binary>> = frame
 
     assert [%{data: data}] = feed_all([head, tail])
     assert get_in(Jason.decode!(data), ["choices", Access.at(0), "delta", "content"]) == text

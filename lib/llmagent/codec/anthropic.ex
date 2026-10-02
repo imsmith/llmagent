@@ -18,6 +18,16 @@ defmodule LLMAgent.Codec.Anthropic do
   vendor server-side tool (it has a `type` other than `custom`), which a
   performer cannot run.
 
+  Two things that look like those are carried instead, because refusing them
+  would end a session for good — once such a block is in a conversation's
+  history, every later request would be refused too:
+
+    * `redacted_thinking` becomes a `:reasoning` block with empty text and
+      the original block under `extra["redacted_thinking"]`.
+    * A block of unknown type *inside a tool result* becomes a text marker,
+      `[<type> block omitted]`, with the original block under
+      `extra["omitted"]`. The tool already ran; only its report is degraded.
+
   Wire strings are mapped to atoms by explicit clauses only.
 
   ## Stream shape
@@ -103,8 +113,11 @@ defmodule LLMAgent.Codec.Anthropic do
   defp decode_content(blocks) when is_list(blocks), do: map_ok(blocks, &decode_block/1)
   defp decode_content(_other), do: {:error, {:invalid, "content must be a string or a list"}}
 
-  defp decode_block(%{"type" => "text", "text" => text} = wire),
+  defp decode_block(%{"type" => "text", "text" => text} = wire) when is_binary(text),
     do: {:ok, %{type: :text, text: text, extra: Map.drop(wire, ~w(type text))}}
+
+  defp decode_block(%{"type" => "redacted_thinking"} = wire),
+    do: {:ok, %{type: :reasoning, text: "", extra: %{"redacted_thinking" => wire}}}
 
   defp decode_block(%{"type" => "thinking"} = wire),
     do: {:ok, %{type: :reasoning, text: wire["thinking"] || "", extra: Map.drop(wire, ~w(type thinking))}}
@@ -119,10 +132,11 @@ defmodule LLMAgent.Codec.Anthropic do
      }}
   end
 
-  defp decode_block(%{"type" => "image", "source" => source}),
+  defp decode_block(%{"type" => "image", "source" => %{} = source}),
     do: {:error, {:unsupported, "image source: #{inspect(source["type"])}"}}
 
-  defp decode_block(%{"type" => "tool_use", "id" => id, "name" => name} = wire) do
+  defp decode_block(%{"type" => "tool_use", "id" => id, "name" => name} = wire)
+       when is_binary(id) and is_binary(name) do
     input = wire["input"] || %{}
 
     {:ok,
@@ -136,8 +150,8 @@ defmodule LLMAgent.Codec.Anthropic do
      }}
   end
 
-  defp decode_block(%{"type" => "tool_result", "tool_use_id" => id} = wire) do
-    with {:ok, content} <- decode_content(wire["content"]) do
+  defp decode_block(%{"type" => "tool_result", "tool_use_id" => id} = wire) when is_binary(id) do
+    with {:ok, content} <- decode_result_content(wire["content"]) do
       {:ok,
        %{
          type: :tool_result,
@@ -149,8 +163,27 @@ defmodule LLMAgent.Codec.Anthropic do
     end
   end
 
+  defp decode_block(%{"type" => type}) when type in ~w(text image tool_use tool_result),
+    do: {:error, {:invalid, "malformed #{type} block"}}
+
   defp decode_block(%{"type" => type}), do: {:error, {:unsupported, "content block type: #{inspect(type)}"}}
   defp decode_block(_wire), do: {:error, {:invalid, "content block without a type"}}
+
+  # A tool result's content, where a block of unknown type is degraded to a
+  # text marker rather than refused.
+  defp decode_result_content(blocks) when is_list(blocks) do
+    map_ok(blocks, fn block ->
+      case decode_block(block) do
+        {:error, {:unsupported, _}} when is_map(block) -> {:ok, omitted(block)}
+        other -> other
+      end
+    end)
+  end
+
+  defp decode_result_content(other), do: decode_content(other)
+
+  defp omitted(%{"type" => type} = wire) when is_binary(type),
+    do: %{type: :text, text: "[#{type} block omitted]", extra: %{"omitted" => wire}}
 
   defp decode_tool(%{"type" => type}) when type != "custom",
     do: {:error, {:unsupported, "server tool: #{inspect(type)}"}}

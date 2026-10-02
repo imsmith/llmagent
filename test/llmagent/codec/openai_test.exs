@@ -126,6 +126,76 @@ defmodule LLMAgent.Codec.OpenAITest do
     end
   end
 
+  describe "decode_stream/2 on a broken or hostile performer" do
+    defp sse(chunks), do: Enum.map_join(chunks, &("data: " <> Jason.encode!(&1) <> "\n\n"))
+
+    defp chunk(delta, finish \\ nil),
+      do: %{"model" => "m", "choices" => [%{"index" => 0, "delta" => delta, "finish_reason" => finish}]}
+
+    defp tool(index, id, name, args),
+      do: %{"tool_calls" => [%{"index" => index, "id" => id, "function" => %{"name" => name, "arguments" => args}}]}
+
+    defp more_args(index, args), do: %{"tool_calls" => [%{"index" => index, "function" => %{"arguments" => args}}]}
+
+    defp no_delta_on_a_closed_block(events) do
+      Enum.reduce(events, nil, fn
+        {:block_start, index, _}, _open -> index
+        {:block_stop, _index}, _open -> nil
+        {tag, index, _}, open when tag in [:text_delta, :reasoning_delta, :tool_args_delta] ->
+          assert index == open, "delta for block #{index} while #{inspect(open)} was open"
+          open
+        _other, open -> open
+      end)
+    end
+
+    test "arguments for a tool call that was already closed by another tool call are an error" do
+      events =
+        decode([
+          sse([chunk(tool(0, "a", "f", "{")), chunk(tool(1, "b", "g", "{}")), chunk(more_args(0, "}"))])
+        ])
+
+      no_delta_on_a_closed_block(events)
+      assert {:error, {:out_of_order_tool_call, 0}} in events
+      assert {:error, {:out_of_order_tool_call, 0}} = fold(events)
+    end
+
+    test "arguments for a tool call that was already closed by text are an error" do
+      events = decode([sse([chunk(tool(0, "a", "f", "{")), chunk(%{"content" => "hi"}), chunk(more_args(0, "}"))])])
+
+      no_delta_on_a_closed_block(events)
+      assert {:error, {:out_of_order_tool_call, 0}} in events
+    end
+
+    test "a chunk of the wrong shape is a bad frame, never a raise" do
+      hostile = [
+        %{"choices" => %{}},
+        %{"choices" => ["x"]},
+        chunk("a string"),
+        chunk(%{"tool_calls" => %{}}),
+        chunk(%{"tool_calls" => ["x"]}),
+        chunk(%{"tool_calls" => [%{"index" => %{}, "function" => %{"arguments" => "{"}}]}),
+        chunk(%{"tool_calls" => [%{"index" => 0, "id" => 7, "function" => %{"name" => 9}}]}),
+        chunk(%{"tool_calls" => [%{"index" => 0, "id" => "a", "function" => "x"}]}),
+        chunk(%{"content" => 5}),
+        %{"choices" => [%{"delta" => %{}, "finish_reason" => 5}]},
+        %{"choices" => [], "usage" => "lots"}
+      ]
+
+      for bad <- hostile do
+        events = decode([sse([chunk(%{"content" => "ok"}), bad])])
+        assert {:error, {:bad_frame, _}} = List.last(events), inspect(bad)
+        no_delta_on_a_closed_block(events)
+      end
+    end
+
+    test "a null error field is not an error" do
+      ok = Map.put(chunk(%{"content" => "hi"}), "error", nil)
+      events = decode([sse([ok, chunk(%{}, "stop")]) <> "data: [DONE]\n\n"])
+
+      assert {:ok, %{message: %{content: [%{type: :text, text: "hi"}]}}} = fold(events)
+    end
+  end
+
   describe "decode_response/1" do
     test "a non-streaming reply folds to the same blocks as the stream" do
       body = WireFixtures.json("openai_two_tools.json")
@@ -263,6 +333,43 @@ defmodule LLMAgent.Codec.OpenAITest do
       assert body["messages"] == [%{"role" => "user", "content" => "hi"}]
       refute Map.has_key?(body, "tools")
       refute Map.has_key?(body, "tool_choice")
+    end
+
+    test "a system message between a tool call and its result does not separate them" do
+      call = %{type: :tool_call, id: "c1", name: "f", input: %{}, input_json: "{}", extra: %{}}
+      result = %{type: :tool_result, tool_call_id: "c1", content: [text("done")], is_error: false, extra: %{}}
+
+      turn = %Turn{
+        messages: [
+          %{role: :user, content: [text("go")], extra: %{}},
+          %{role: :assistant, content: [call], extra: %{}},
+          %{role: :system, content: [text("reminder")], extra: %{}},
+          %{role: :user, content: [result], extra: %{}}
+        ]
+      }
+
+      messages = encode(turn)["messages"]
+      assert Enum.map(messages, & &1["role"]) == ["user", "assistant", "tool", "user"]
+      assert List.last(messages)["content"] == "reminder"
+    end
+
+    test "an image in a tool result reaches the performer instead of vanishing" do
+      call = %{type: :tool_call, id: "c1", name: "read", input: %{}, input_json: "{}", extra: %{}}
+      image = %{type: :image, media_type: "image/png", data: "AAAA", extra: %{}}
+      result = %{type: :tool_result, tool_call_id: "c1", content: [image], is_error: false, extra: %{}}
+
+      turn = %Turn{
+        messages: [
+          %{role: :assistant, content: [call], extra: %{}},
+          %{role: :user, content: [result], extra: %{}}
+        ]
+      }
+
+      assert [_assistant, tool, user] = encode(turn)["messages"]
+      assert tool["role"] == "tool"
+      assert tool["content"] != ""
+      assert user["role"] == "user"
+      assert Enum.any?(user["content"], &(&1["type"] == "image_url" and &1["image_url"]["url"] == "data:image/png;base64,AAAA"))
     end
 
     test "an image becomes an image_url part with a data URL" do

@@ -121,6 +121,13 @@ as either a string or a list. The rule:
   change what the turn means: a content block of an unknown type, and a tool
   entry carrying a `type` (a vendor server-side tool the performer cannot
   run).
+- Two exceptions, found in review, because refusing them would end a session
+  for good once such a block is in its history: `redacted_thinking` is
+  carried as a reasoning block and dropped when crossing protocols, and a
+  block of unknown type inside a tool result becomes a text marker naming
+  the omitted type. An unknown block anywhere else is still refused.
+- An image inside a tool result crosses into OpenAI Chat as an image in the
+  user message that follows the tool messages.
 - Mid-conversation system messages cross into OpenAI Chat as user-role text,
   and adjacent same-role messages are merged. One of the two live hosts
   accepts a leading system message but answers HTTP 500 from its chat
