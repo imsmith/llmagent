@@ -46,12 +46,37 @@ becomes an event on topic `system.config.network` with data
 event's name, its arguments key-value pairs, and it does nothing but answer
 them. The README's idiom works as written.
 
-### No loop
+### Loops have a ceiling
 
-A runtime's own emits carry `source: LLMAgent.Anemos.Channel` and are not
-dispatched back into any runtime. Within a runtime, `emit ... as :label`
-chains rules, under the dispatcher's recursion ceiling. Across the bus
-there is no ceiling, so there is no feedback.
+A runtime's own emits carry `source: {LLMAgent.Anemos.Channel, runtime}`
+and are not dispatched back into that runtime. Another runtime's are
+events like any other.
+
+That is not enough on its own, and the review proved it: a rule that calls
+a tool which emits — the tuple space, inotify after a `write`, any agent —
+is a loop with no call depth to bound it. So causation is counted. Every
+event carries a correlation id (its own id if it has none); the rules run
+under it in the ambient `Comn` context, a tool is called with that context
+set, and what it emits inherits the id. Past `:hop_limit` events (default
+64) on one correlation, the rest are dropped and the log says so once. Two
+runtimes feeding each other count the same chain and stop the same way.
+
+### What the review added
+
+- Payloads of any shape are taken: a struct, a map with tuple keys, a tuple
+  type. The events process does not die on data.
+- An event no rule or condition subscribes to is not dispatched: no trace
+  entry, no persist, no condition round-trip. One `explain` call, which is
+  cheaper than the dispatch it saves.
+- A dispatch that does not answer within `:dispatch_timeout_ms` is logged
+  as such, and the log says the rules may still run.
+- The tools process binds `EVENT`, the connector and every tool name at
+  start, and dies with the runtime's supervisor, so a runtime that comes
+  back empty is bound again. Start the attachment after the runtime, under
+  the same supervisor.
+- A rule can emit on any topic, and that goes into the event log and the
+  durable log like any event. The source says who said it; a consumer that
+  acts on a topic has to read it. Not narrowed here.
 
 ## Rulings
 

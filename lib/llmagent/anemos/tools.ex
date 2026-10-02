@@ -53,6 +53,17 @@ defmodule LLMAgent.Anemos.Tools do
     if policy.require_approval != [] do
       {:stop, {:require_approval_not_supported, policy.require_approval}}
     else
+      # Everything bound into the runtime goes with the runtime: a restart
+      # of its supervisor brings it back empty. Dying with it puts this
+      # process through its own restart, which binds everything again.
+      Process.monitor(Process.whereis(:"#{runtime}.supervisor") || self())
+
+      # `[EVENT::name ...]` is the message a rule emits; see LLMAgent.Anemos.Event.
+      register(runtime, "EVENT", LLMAgent.Anemos.Event)
+
+      if Keyword.get(opts, :connect, true),
+        do: :ok = Anemos.Runtime.connect(runtime, LLMAgent.Anemos.Channel)
+
       everything = ToolQuery.new(%{coordinate: "*"})
       :ok = Discovery.subscribe(everything, self())
       {:ok, ads} = Discovery.find_all(everything)
@@ -70,6 +81,10 @@ defmodule LLMAgent.Anemos.Tools do
   end
 
   @impl true
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
+    {:stop, {:shutdown, :runtime_down}, state}
+  end
+
   def handle_info({event, _id, coordinate}, state) when event in [:tool_added, :tool_updated] do
     {:noreply, bind(state, coordinate)}
   end
@@ -113,7 +128,7 @@ defmodule LLMAgent.Anemos.Tools do
           )
         end
 
-        register(state.runtime, name)
+        register(state.runtime, name, LLMAgent.Anemos)
         %{state | names: Map.put(state.names, name, coordinate)}
 
       ^coordinate ->
@@ -129,15 +144,15 @@ defmodule LLMAgent.Anemos.Tools do
     end
   end
 
-  defp register(runtime, name) do
-    case Anemos.Runtime.register(runtime, name, LLMAgent.Anemos) do
+  defp register(runtime, name, module) do
+    case Anemos.Runtime.register(runtime, name, module) do
       :ok ->
         :ok
 
       {:error, {:already_registered, other}} ->
         Logger.warning(
-          "[llmagent] #{name} is bound to #{inspect(other)} in #{runtime}; " <>
-            "the tool is not reachable under that name"
+          "[llmagent] #{name} is bound to #{inspect(other)} in #{runtime}, not to " <>
+            "#{inspect(module)}; policies reach #{inspect(other)} under that name"
         )
     end
   end

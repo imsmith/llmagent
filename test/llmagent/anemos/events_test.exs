@@ -9,7 +9,7 @@ defmodule LLMAgent.Anemos.EventsTest do
     rt = :"ae_#{:erlang.phash2(context.test)}"
     start_supervised!({Anemos.Runtime, name: rt})
 
-    opts = [runtime: rt, policy: %Policy{}] ++ Map.get(context, :opts, [])
+    opts = Keyword.merge([runtime: rt, policy: %Policy{}], Map.get(context, :opts, []))
     start_supervised!({LLMAgent.Anemos, opts})
     %{rt: rt}
   end
@@ -112,7 +112,7 @@ defmodule LLMAgent.Anemos.EventsTest do
 
     assert_receive {:event, "system.config.network",
                     %EventStruct{
-                      source: LLMAgent.Anemos.Channel,
+                      source: {LLMAgent.Anemos.Channel, ^rt},
                       data: %{
                         payload: %{"event" => "ip.addr.changed", "iface" => "eth0"},
                         rule: "r"
@@ -123,13 +123,151 @@ defmodule LLMAgent.Anemos.EventsTest do
     refute "SYSTEM_CONFIG_NETWORK" in fired(rt)
   end
 
-  test "an event the runtime cannot take does not stop the next one", %{rt: rt} do
+  defmodule Emitter do
+    @moduledoc false
+    @behaviour LLMAgent.Tool.Kinds.Compute
+    @impl true
+    def compute("tick", _args) do
+      LLMAgent.Events.emit(:tick, "loop.tick", %{}, :emitter)
+      {:ok, :ticked}
+    end
+  end
+
+  defp register_emitter do
+    :ok =
+      Discovery.register(
+        ToolAd.new(%{
+          id: "t.emitter",
+          coordinate: "function.test.emitter",
+          kinds: [:compute],
+          binding: {:module, Emitter},
+          operational: %{actions: %{}},
+          constraint: %{idempotency: %{}, blast_radius: %{}},
+          affordance: %{declared: [], learned: [], open: false},
+          fidelity: :authoritative,
+          provenance: %{
+            source: "test",
+            produced_at: DateTime.utc_now(),
+            based_on: [],
+            signature: nil
+          },
+          lease: :permanent
+        })
+      )
+  end
+
+  @tag opts: [
+         policy: %Policy{allow: ["function.test.*"], fidelity_min: :authoritative},
+         hop_limit: 8
+       ]
+  test "a loop through an emitting tool stops at the hop limit", %{rt: rt} do
+    register_emitter()
+    await(fn -> "FUNCTION_TEST_EMITTER" in Anemos.Runtime.describe(rt).modules end)
+    :ok = Anemos.Runtime.load(rt, ~s|rule r { when LOOP_TICK { [FUNCTION_TEST_EMITTER::tick] } }|)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        Events.emit(:tick, "loop.tick", %{}, :seed)
+        Process.sleep(500)
+      end)
+
+    ticks = Enum.count(Anemos.Runtime.trace(rt, 200), &(&1.event == "LOOP_TICK"))
+    assert ticks == 8
+    assert log =~ "chain of cause and effect"
+  end
+
+  test "any payload shape is taken", %{rt: rt} do
+    :ok = Anemos.Runtime.load(rt, ~s|rule r { when ODD_SHAPE { log ?topic } }|)
     events = Process.whereis(:"#{rt}.llmagent.events")
-    Process.exit(Process.whereis(:"#{rt}.dispatcher"), :kill)
-    Events.emit(:x, "while.down", %{}, :test)
-    Events.emit(:x, "after.down", %{}, :test)
-    await(fn -> "AFTER_DOWN" in fired(rt) end)
+
+    Events.emit(:x, "odd.shape", %URI{path: "/"}, :test)
+    Events.emit({:tuple, :type}, "odd.shape", %{{:a, 1} => 2}, {:pid, self()})
+    Events.emit(:x, "odd.shape", [1, 2], :test)
+    await(fn -> Enum.count(Anemos.Runtime.trace(rt, 200), &(&1.event == "ODD_SHAPE")) == 3 end)
+
     assert Process.whereis(:"#{rt}.llmagent.events") == events
+  end
+
+  @tag opts: [dispatch_timeout_ms: 100]
+  test "a runtime that does not answer in time is logged, and the next event still goes", %{
+    rt: rt
+  } do
+    :ok =
+      Anemos.Runtime.load(
+        rt,
+        ~s|rule r { when SLOW_ONE { log "one" } when NEXT_ONE { log "two" } }|
+      )
+
+    events = Process.whereis(:"#{rt}.llmagent.events")
+    dispatcher = Process.whereis(:"#{rt}.dispatcher")
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        :sys.suspend(dispatcher)
+        Events.emit(:x, "slow.one", %{}, :test)
+        Process.sleep(300)
+        :sys.resume(dispatcher)
+        Events.emit(:x, "next.one", %{}, :test)
+        await(fn -> "NEXT_ONE" in fired(rt) end)
+      end)
+
+    assert log =~ "did not answer SLOW_ONE within 100ms"
+    assert Process.whereis(:"#{rt}.llmagent.events") == events
+  end
+
+  test "another runtime's emits are events here; this runtime's own are not", %{rt: rt} do
+    other = :"#{rt}_other"
+    start_supervised!(Supervisor.child_spec({Anemos.Runtime, name: other}, id: :other_rt))
+
+    start_supervised!(
+      Supervisor.child_spec({LLMAgent.Anemos, runtime: other, policy: %Policy{}}, id: :other_att)
+    )
+
+    source = """
+    rule say { when EV { emit [EVENT::hello] to channel(greeting) } }
+    rule hear { when GREETING { log "heard" } }
+    """
+
+    :ok = Anemos.Runtime.load(rt, source)
+    :ok = Anemos.Runtime.load(other, source)
+
+    Anemos.Runtime.dispatch(other, "EV")
+    await(fn -> "GREETING" in fired(rt) end)
+
+    Process.sleep(50)
+    refute "GREETING" in fired(other)
+  end
+
+  test "an event nothing listens for is not dispatched", %{rt: rt} do
+    :ok = Anemos.Runtime.load(rt, ~s|rule r { when WANTED { log "w" } }|)
+    Events.emit(:x, "unwanted", %{}, :test)
+    Events.emit(:x, "wanted", %{}, :test)
+    await(fn -> "WANTED" in fired(rt) end)
+    refute "UNWANTED" in fired(rt)
+  end
+
+  test "EVENT and the connector come back after the runtime restarts", %{rt: rt} do
+    EventBus.subscribe("after.restart")
+    sup = Process.whereis(:"#{rt}.supervisor")
+    ref = Process.monitor(sup)
+    Process.exit(sup, :kill)
+    assert_receive {:DOWN, ^ref, _, _, _}
+
+    # The test's own supervisor restarts the runtime; the attachment's tools
+    # process notices and binds again.
+    await(fn ->
+      Process.whereis(:"#{rt}.dispatcher") != nil and
+        "EVENT" in Anemos.Runtime.describe(rt).modules
+    end)
+
+    :ok =
+      Anemos.Runtime.load(
+        rt,
+        ~s|rule r { when EV { emit [EVENT::back] to channel(after.restart) } }|
+      )
+
+    Anemos.Runtime.dispatch(rt, "EV")
+    assert_receive {:event, "after.restart", %EventStruct{source: {LLMAgent.Anemos.Channel, ^rt}}}
   end
 
   @tag opts: [events: false, connect: false]

@@ -41,7 +41,7 @@ defmodule LLMAgent.Anemos do
   use Supervisor
 
   alias LLMAgent.{ToolAd, ToolQuery, Tool.Dispatcher, Tools.Discovery}
-  alias LLMAgent.Anemos.{Channel, Events, Tools}
+  alias LLMAgent.Anemos.{Events, Tools}
 
   @behaviour Anemos.Runtime.Module
 
@@ -65,7 +65,8 @@ defmodule LLMAgent.Anemos do
   `:verb_timeout_ms` (default #{Tools.default_timeout_ms()}), `:events`
   (feed the substrate's events into the runtime; default `true`),
   `:connect` (make the runtime's `emit` publish on the substrate's bus;
-  default `true`).
+  default `true`), and `LLMAgent.Anemos.Events`'s `:hop_limit` and
+  `:dispatch_timeout_ms`.
   """
   @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(opts) do
@@ -73,17 +74,16 @@ defmodule LLMAgent.Anemos do
     Supervisor.start_link(__MODULE__, opts, name: :"#{runtime}.llmagent")
   end
 
+  # Start it after the runtime, under the same supervisor: the tools
+  # process binds into the runtime at start and dies with it, and comes
+  # back once the runtime has.
   @impl true
   def init(opts) do
-    runtime = Keyword.fetch!(opts, :runtime)
-
-    # `[EVENT::name ...]` is the message a rule emits; see `LLMAgent.Anemos.Event`.
-    _ = Anemos.Runtime.register(runtime, "EVENT", LLMAgent.Anemos.Event)
-    if Keyword.get(opts, :connect, true), do: :ok = Anemos.Runtime.connect(runtime, Channel)
-
     children =
-      [{Tools, Keyword.take(opts, [:runtime, :policy, :verb_timeout_ms])}] ++
-        if Keyword.get(opts, :events, true), do: [{Events, runtime: runtime}], else: []
+      [{Tools, Keyword.take(opts, [:runtime, :policy, :verb_timeout_ms, :connect])}] ++
+        if Keyword.get(opts, :events, true),
+          do: [{Events, Keyword.take(opts, [:runtime, :hop_limit, :dispatch_timeout_ms])}],
+          else: []
 
     Supervisor.init(children, strategy: :one_for_one)
   end
@@ -157,8 +157,14 @@ defmodule LLMAgent.Anemos do
     parent = self()
     tag = make_ref()
 
+    # The ambient context goes with the call, so what the tool emits is on
+    # the same chain of cause and effect as the event that led here.
+    ambient = Comn.Contexts.get()
+
     {pid, monitor} =
       spawn_monitor(fn ->
+        if ambient, do: Comn.Contexts.set(ambient)
+
         result =
           try do
             fun.()
