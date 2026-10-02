@@ -17,6 +17,8 @@
 #
 # Environment:
 #   AVAHI_LLAMA_RENEW_MS    renewal interval in milliseconds (default 20000)
+#   AVAHI_LLAMA_LEASE_S     lease length in seconds (default 60); keep it
+#                           several times the renewal interval
 #   AVAHI_LLAMA_BROWSE_CMD  command to read browse output from, as a Tcl list
 #                           (default: stdbuf -oL avahi-browse -p -r _llama._tcp)
 #
@@ -71,6 +73,15 @@ proc registrable {txt} {
     return [expr {$api eq "openai-compatible" && $status eq "ok"}]
 }
 
+proc lease_seconds {} {
+    global env
+    if {[info exists env(AVAHI_LLAMA_LEASE_S)] && [string is integer -strict $env(AVAHI_LLAMA_LEASE_S)]
+        && $env(AVAHI_LLAMA_LEASE_S) > 0} {
+        return $env(AVAHI_LLAMA_LEASE_S)
+    }
+    return 60
+}
+
 proc emit_register {ad_id host addr port txt} {
     set model  [expr {[dict exists $txt model]  ? [dict get $txt model]  : ""}]
     set n_ctx  [expr {[dict exists $txt n_ctx]  ? [dict get $txt n_ctx]  : "0"}]
@@ -80,7 +91,7 @@ proc emit_register {ad_id host addr port txt} {
 
     set api_host "http://$addr:$port"
     set now      [clock format [clock seconds]    -format "%Y-%m-%dT%H:%M:%SZ" -gmt 1]
-    set expires  [clock format [expr {[clock seconds] + 60}] -format "%Y-%m-%dT%H:%M:%SZ" -gmt 1]
+    set expires  [clock format [expr {[clock seconds] + [lease_seconds]}] -format "%Y-%m-%dT%H:%M:%SZ" -gmt 1]
 
     set ad "{:id [edn_str $ad_id]"
     append ad " :coordinate \"compute.llm.chat\""

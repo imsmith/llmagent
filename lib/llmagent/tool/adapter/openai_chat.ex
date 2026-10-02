@@ -62,6 +62,9 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChat do
       json: Codec.OpenAI.encode_request(%{turn | stream: true}, model),
       receive_timeout: Keyword.get(opts, :timeout, 120_000),
       retry: false,
+      # The ad names the performer, and the caller chose it under a policy. A
+      # redirect would carry the prompt somewhere that policy never saw.
+      redirect: false,
       compressed: false,
       into: fn {:data, data}, {req, resp} ->
         if resp.status == 200, do: :atomics.put(replying, 1, 1)
