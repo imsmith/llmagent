@@ -53,4 +53,7 @@ defmodule LLMAgent.DoctestTest do
 
   # Turn
   doctest LLMAgent.Turn.Fold
+
+  # Codecs
+  doctest LLMAgent.Codec.SSE
 end
