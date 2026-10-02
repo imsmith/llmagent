@@ -41,7 +41,7 @@ defmodule LLMAgent.Memory.ETS do
   def init(agent_id, _opts \\ []) do
     case Table.create(table_for(agent_id)) do
       {:ok, _} -> :ok
-      {:error, {:already_exists, _}} -> :ok
+      {:error, %Comn.Errors.ErrorStruct{code: "repo.table/already_exists"}} -> :ok
     end
   end
 
@@ -79,7 +79,7 @@ defmodule LLMAgent.Memory.ETS do
   def fetch(agent_id, key) do
     case Table.get(table_for(agent_id), key: key) do
       {:ok, value} -> {:ok, value}
-      {:error, {:not_found, _}} -> {:error, :not_found}
+      {:error, %Comn.Errors.ErrorStruct{code: "repo.table/not_found"}} -> {:error, :not_found}
     end
   end
 

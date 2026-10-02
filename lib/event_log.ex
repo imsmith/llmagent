@@ -38,7 +38,7 @@ defmodule LLMAgent.EventLog do
   """
   @spec record(term()) :: :ok
   def record(term) do
-    event = Event.to_event(term)
+    {:ok, event} = Event.to_event(term)
     Agent.update(__MODULE__, fn log -> [event | log] end)
   end
 

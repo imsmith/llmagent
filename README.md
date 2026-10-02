@@ -327,6 +327,47 @@ LLMAgent.AgentSupervisor.list_agents()
 LLMAgent.AgentSupervisor.stop_agent(:researcher)
 ```
 
+### Turn-shaped generate
+
+`LLMAgent.Tool.Dispatcher.generate/4` carries a whole conversation turn —
+system, tools, tool calls and their results — to a discovered
+`compute.llm.chat` performer, streaming, under a `%Policy{}`:
+
+```elixir
+alias LLMAgent.{Turn, Tool.Dispatcher, Tool.Policy}
+
+turn = %Turn{
+  messages: [%{role: :user, content: [%{type: :text, text: "hi", extra: %{}}], extra: %{}}]
+}
+
+policy = %Policy{allow: ["compute.llm.chat"], fidelity_min: :authoritative}
+
+{:ok, message, provenance} =
+  Dispatcher.generate("compute.llm.chat", "chat", %{turn: turn},
+    policy: policy,
+    into: fn event -> IO.inspect(event); :cont end
+  )
+```
+
+`into` is optional; it receives canonical stream events
+(`t:LLMAgent.Turn.event/0`) as they arrive and returns `:cont`, or `:halt` to
+cancel the upstream request. The call returns the folded assistant message
+and `%{model:, stop_reason:, usage:, latency_ms:}`. Without an allowing
+policy the dispatcher refuses and the performer is never contacted.
+
+`%LLMAgent.Turn{}` is independent of any vendor protocol. Two pure codecs
+translate at the edges:
+
+- `LLMAgent.Codec.Anthropic` reads an Anthropic Messages request into a turn
+  and writes canonical events back as the SSE stream a Messages client
+  expects.
+- `LLMAgent.Codec.OpenAI` writes a turn as an OpenAI Chat Completions request
+  and reads the performer's stream into canonical events.
+
+`scripts/hub_probe.exs` runs the whole path against a live performer, using a
+request captured from a real Claude Code client. The design is in
+`docs/superpowers/specs/2026-10-02-private-llm-hub-design.md`.
+
 ### Pluggable LLM Client
 
 The agent uses `LLMAgent.LLMClient.OpenAI` by default. Implement the `LLMAgent.LLMClient` behaviour (`chat/2`) to use a different backend:
@@ -470,10 +511,10 @@ LLMAgent.Utils.Encoder.call("base64", %{"data" => "hello"})
 ```elixir
 defp deps do
   [
-    {:req, "~> 0.5.0"},          # HTTP client
+    {:req, "~> 0.5"},            # HTTP client
     {:jason, "~> 1.4"},          # JSON
     {:b58, "~> 1.0"},            # Base58 encoding
-    {:comn, github: "imsmith/comn", tag: "v0.4.0"},
+    {:comn, github: "imsmith/comn", tag: "v0.5.2"},
     {:mix_test_watch, "~> 1.1", only: [:dev], runtime: false}
   ]
 end
@@ -486,7 +527,7 @@ System binaries used by tools: `bash`, `ip`, `ping`, `dig`, `ps`, `systemctl`, `
 ## Tests
 
 ```sh
-mix test    # 109 doctests, 232 tests
+mix test    # 130 doctests, 544 tests
 ```
 
-Coverage includes agent lifecycle (multi-turn tool loops, stop/restart, concurrent agents, context propagation, event ordering, memory persistence, DurableLog reconstruction), all 12 native tools, MCP client integration (transport, connection lifecycle, tool discovery, proxy dispatch, facade API), event wiring, context enrichment, durable event persistence, and error handling.
+Coverage includes agent lifecycle (multi-turn tool loops, stop/restart, concurrent agents, context propagation, event ordering, memory persistence, DurableLog reconstruction), all 12 native tools, MCP client integration (transport, connection lifecycle, tool discovery, proxy dispatch, facade API), event wiring, context enrichment, durable event persistence, error handling, and the turn-shaped generate path (both codecs against recorded wire traffic, the streaming adapter, and dispatch under policy).
