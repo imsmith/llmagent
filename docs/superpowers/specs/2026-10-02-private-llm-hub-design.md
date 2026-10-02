@@ -191,25 +191,76 @@ performer timeout.
   record in an edn file: name, and a `%Policy{}`.
 - No match is a 401. There is no anonymous client.
 - The listener binds loopback by default; the bind address is configuration.
-- Local-only versus cloud-allowed is expressed with the existing provenance
-  constraint: a local-only client's policy lists
-  `provenance.source: ["mdns/_llama._tcp"]`.
+- Clients are local-only unless their record says `:cloud true`; see Cloud
+  performers.
 - The client name is attached to every event and every turn-log row.
 
 ### Cloud performers
 
-- Declared in the hub's edn config and registered as ads at boot: coordinate
-  `compute.llm.chat`, kinds `[:generate]`, `lease: :permanent`, fidelity
-  `:authoritative`, provenance source `hub.config`, binding
-  `:anthropic_messages` or `:openai_chat`.
-- The credential is named by environment variable in the config, never written
-  in it. The unit supplies it. It is wrapped so it does not survive `inspect`
-  or logging.
-- `ponytail:` env-var credentials are a stopgap. They move behind the
-  credentials broker when that exists.
-- Cloud use through the hub bills against an API key. A Claude subscription
-  login is not forwarded; that is a cost consequence, stated here so it is a
-  choice.
+Cloud forwarding spends money on an API key. It is never the result of a
+default, a fallback, or a model-name coincidence. Every layer below fails
+closed, and each one alone is enough to keep a turn off the cloud.
+
+**What the hub can and cannot do.** The hub decodes and re-encodes turns, so it
+cannot carry a Claude or ChatGPT subscription login upstream. Any turn the hub
+sends to a vendor is billed to an API key. A client's own `Authorization`
+header is used only to identify the client to the hub and is never forwarded.
+To use a subscription, run the client without the hub's base URL; the hub is
+not in that path at all.
+
+**Off unless declared, three times.** A turn reaches a cloud performer only
+when all of these hold:
+
+1. The config has `:cloud {:enabled true}`. Absent or false, no cloud ad is
+   ever registered, whatever else the config says.
+2. The performer is declared under `:cloud {:performers […]}` with a name, a
+   vendor binding, a model, the name of the environment variable holding its
+   key, and a `:daily_token_limit`. An entry missing the limit is a config
+   error and the hub refuses to start. An entry whose environment variable is
+   unset is not registered, and the hub says so at startup.
+3. The client record has `:cloud true`. The config loader always writes a
+   provenance constraint into the client's `%Policy{}`: local sources only
+   unless `:cloud true`. A client policy never has `provenance: nil`, because
+   nil means "no filtering" and would admit cloud ads.
+
+**Addressed only by an explicit name.** Cloud performers are registered under
+model ids with a mandatory `cloud/` prefix, for example
+`cloud/claude-sonnet`. The static router matches a cloud performer only on
+that exact prefixed id.
+
+- A vendor model id such as `claude-sonnet-4-5`, which Claude Code sends
+  without being asked, never matches a cloud performer.
+- The configured default performer must be local; naming a cloud performer as
+  the default is a config error.
+- There is no failover to cloud. A local performer that is down, full, or
+  missing yields 502, 503, or 404.
+- An Anemos rule may route to a cloud performer, since writing that rule is
+  an explicit decision, but the three conditions above still apply and the
+  router refuses a rule's choice the client's policy does not admit.
+
+**The limit is enforced.** Input plus output tokens are counted per cloud
+performer per local day from the turn log. A turn that would start past the
+limit is refused with 429 before anything is sent upstream.
+
+**Always visible.**
+
+- At startup the hub logs one line per registered cloud performer, or one
+  line saying cloud forwarding is off.
+- Every response carries `x-hub-performer` (the ad id) and `x-hub-billing`
+  (`local` or `api-key`).
+- `GET /v1/models` lists cloud performers only to clients with `:cloud true`,
+  always under their `cloud/` names.
+- Each cloud turn emits a `hub.cloud_request` event in addition to
+  `hub.request`, and its turn-log row is marked billed with the token counts.
+
+**Mechanics.** Cloud ads use coordinate `compute.llm.chat`, kinds
+`[:generate]`, `lease: :permanent`, fidelity `:authoritative`, provenance
+source `hub.config`, binding `:anthropic_messages` or `:openai_chat`. The
+credential is read from the named environment variable, supplied by the unit,
+and wrapped so it does not survive `inspect` or logging.
+
+`ponytail:` env-var credentials are a stopgap. They move behind the
+credentials broker when that exists.
 
 ### `Hub.Router`
 
@@ -221,7 +272,8 @@ client's policy admits.
    uses to name its choice. The rule file is loaded at boot from the config
    directory.
 2. If no rule names a performer, static fallback: an ad whose model id equals
-   the requested model; otherwise the configured default performer.
+   the requested model; otherwise the configured default performer, which is
+   always local.
 3. If nothing matches, 404.
 
 An Anemos failure (parse error, rule crash) falls through to the static
@@ -291,6 +343,12 @@ Each step ends in something that runs.
   mid-stream and asserts the upstream request is cancelled.
 - Policy tests: unknown token, local-only client refused a cloud performer,
   empty policy denies.
+- Cloud guard tests, each asserting the fake cloud performer received zero
+  requests: cloud disabled; client without `:cloud true`; a vendor model id
+  with a cloud performer configured; local performer down; daily limit
+  reached; performer entry without a limit refuses to start; a cloud default
+  performer refuses to start. One positive test: all three conditions met and
+  a `cloud/` id requested reaches it, with `x-hub-billing: api-key`.
 - Acceptance, against the running unit: `claude -p` and pi each complete a
   prompt that requires a tool call and a follow-up turn.
 
