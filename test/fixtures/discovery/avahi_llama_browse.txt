@@ -1,0 +1,4 @@
++;enp89s0;IPv4;llama-server\032on\032skynet002\.18020\.home\.arpa;_llama._tcp;local
++;enp89s0;IPv4;llama-server\032on\032skynet001\.18020\.home\.arpa;_llama._tcp;local
+=;enp89s0;IPv4;llama-server\032on\032skynet002\.18020\.home\.arpa;_llama._tcp;local;skynet002.local;10.10.1.229;8080;"n_ctx=32768" "slots=4" "model=mistral-7b-instruct-v0.2.Q8_0.gguf" "status=ok" "api=openai-compatible" "hostname=skynet002.18020.home.arpa" "server=llama.cpp"
+=;enp89s0;IPv4;llama-server\032on\032skynet001\.18020\.home\.arpa;_llama._tcp;local;skynet001.local;10.10.1.226;8080;"n_ctx=262144" "slots=4" "model=gemma-4-26B-A4B-it-Q4_K_M.gguf" "status=ok" "api=openai-compatible" "hostname=skynet001.18020.home.arpa" "server=llama.cpp"
