@@ -80,12 +80,7 @@ defmodule LLMAgent.Codec.OpenAI do
   defp put_if(map, false, _key, _value), do: map
 
   defp encode_params(params) do
-    for {key, wire_key} <- [
-          max_tokens: "max_tokens",
-          temperature: "temperature",
-          top_p: "top_p",
-          stop: "stop"
-        ],
+    for {key, wire_key} <- [max_tokens: "max_tokens", temperature: "temperature", top_p: "top_p", stop: "stop"],
         Map.has_key?(params, key),
         into: %{},
         do: {wire_key, Map.fetch!(params, key)}
@@ -103,9 +98,7 @@ defmodule LLMAgent.Codec.OpenAI do
   defp encode_tool_choice(:auto), do: "auto"
   defp encode_tool_choice(:none), do: "none"
   defp encode_tool_choice(:required), do: "required"
-
-  defp encode_tool_choice({:tool, name}),
-    do: %{"type" => "function", "function" => %{"name" => name}}
+  defp encode_tool_choice({:tool, name}), do: %{"type" => "function", "function" => %{"name" => name}}
 
   defp encode_messages(%Turn{system: system, messages: messages}) do
     leading =
@@ -115,10 +108,7 @@ defmodule LLMAgent.Codec.OpenAI do
       end
 
     leading ++
-      (messages
-       |> Enum.flat_map(&encode_message/1)
-       |> keep_tool_results_adjacent()
-       |> merge_adjacent())
+      (messages |> Enum.flat_map(&encode_message/1) |> keep_tool_results_adjacent() |> merge_adjacent())
   end
 
   defp encode_message(%{role: :system, content: content}) do
@@ -150,22 +140,15 @@ defmodule LLMAgent.Codec.OpenAI do
     # A tool message carries text only, so images a tool returned travel in
     # the user message that follows.
     result_images =
-      for %{type: :tool_result, content: inner} <- content,
-          %{type: :image} = image <- inner,
-          do: image
+      for %{type: :tool_result, content: inner} <- content, %{type: :image} = image <- inner, do: image
 
     parts = Enum.flat_map(result_images ++ content, &encode_part/1)
 
     user =
       cond do
-        parts == [] ->
-          []
-
-        Enum.all?(parts, &(&1["type"] == "text")) ->
-          [%{"role" => "user", "content" => join_text(parts)}]
-
-        true ->
-          [%{"role" => "user", "content" => parts}]
+        parts == [] -> []
+        Enum.all?(parts, &(&1["type"] == "text")) -> [%{"role" => "user", "content" => join_text(parts)}]
+        true -> [%{"role" => "user", "content" => parts}]
       end
 
     results ++ user
@@ -238,8 +221,7 @@ defmodule LLMAgent.Codec.OpenAI do
   defp merge_adjacent(messages) do
     messages
     |> Enum.reduce([], fn
-      %{"role" => role} = message, [%{"role" => role} = previous | rest]
-      when role in ["user", "assistant"] ->
+      %{"role" => role} = message, [%{"role" => role} = previous | rest] when role in ["user", "assistant"] ->
         [merge(previous, message) | rest]
 
       message, acc ->
@@ -306,16 +288,9 @@ defmodule LLMAgent.Codec.OpenAI do
 
   defp decode_frame(%{data: data}, state) do
     case Jason.decode(data) do
-      {:ok, %{"error" => error}} when not is_nil(error) ->
-        fail(state, {:upstream, error})
-
-      {:ok, %{} = chunk} ->
-        if well_formed?(chunk),
-          do: decode_chunk(chunk, state),
-          else: fail(state, {:bad_frame, data})
-
-      _ ->
-        fail(state, {:bad_frame, data})
+      {:ok, %{"error" => error}} when not is_nil(error) -> fail(state, {:upstream, error})
+      {:ok, %{} = chunk} -> if well_formed?(chunk), do: decode_chunk(chunk, state), else: fail(state, {:bad_frame, data})
+      _ -> fail(state, {:bad_frame, data})
     end
   end
 
@@ -333,8 +308,7 @@ defmodule LLMAgent.Codec.OpenAI do
     calls = (is_map(delta) && delta["tool_calls"]) || []
 
     optional?(choice["finish_reason"], &is_binary/1) and is_map(delta) and
-      optional?(delta["content"], &is_binary/1) and
-      optional?(delta["reasoning_content"], &is_binary/1) and
+      optional?(delta["content"], &is_binary/1) and optional?(delta["reasoning_content"], &is_binary/1) and
       is_list(calls) and Enum.all?(calls, &well_formed_call?/1)
   end
 
@@ -343,8 +317,7 @@ defmodule LLMAgent.Codec.OpenAI do
   defp well_formed_call?(%{} = call) do
     function = call["function"] || %{}
 
-    optional?(call["index"], &is_integer/1) and optional?(call["id"], &is_binary/1) and
-      is_map(function) and
+    optional?(call["index"], &is_integer/1) and optional?(call["id"], &is_binary/1) and is_map(function) and
       optional?(function["name"], &is_binary/1) and optional?(function["arguments"], &is_binary/1)
   end
 
@@ -389,9 +362,7 @@ defmodule LLMAgent.Codec.OpenAI do
   defp usage(_absent, current), do: current
 
   defp decode_delta(delta, state) do
-    {reasoning, state} =
-      text_delta(delta["reasoning_content"], :reasoning, :reasoning_delta, state)
-
+    {reasoning, state} = text_delta(delta["reasoning_content"], :reasoning, :reasoning_delta, state)
     {text, state} = text_delta(delta["content"], :text, :text_delta, state)
 
     {calls, state} =
@@ -445,16 +416,12 @@ defmodule LLMAgent.Codec.OpenAI do
               tools: Map.put(state.tools, wire_index, index)
           }
 
-          {closing ++ [{:block_start, index, {:tool_call, id, function["name"] || ""}}], index,
-           state}
+          {closing ++ [{:block_start, index, {:tool_call, id, function["name"] || ""}}], index, state}
       end
 
     case function["arguments"] do
-      args when is_binary(args) and args != "" ->
-        {opening ++ [{:tool_args_delta, index, args}], state}
-
-      _ ->
-        {opening, state}
+      args when is_binary(args) and args != "" -> {opening ++ [{:tool_args_delta, index, args}], state}
+      _ -> {opening, state}
     end
   end
 
@@ -463,15 +430,11 @@ defmodule LLMAgent.Codec.OpenAI do
   defp ensure_open(state, kind) do
     {closing, state} = close_open(state)
     index = state.next_index
-
-    {closing ++ [{:block_start, index, kind}], index,
-     %{state | open: {index, kind}, next_index: index + 1}}
+    {closing ++ [{:block_start, index, kind}], index, %{state | open: {index, kind}, next_index: index + 1}}
   end
 
   defp close_open(%__MODULE__{open: nil} = state), do: {[], state}
-
-  defp close_open(%__MODULE__{open: {index, _kind}} = state),
-    do: {[{:block_stop, index}], %{state | open: nil}}
+  defp close_open(%__MODULE__{open: {index, _kind}} = state), do: {[{:block_stop, index}], %{state | open: nil}}
 
   defp decode_finish(nil, state), do: {[], state}
   defp decode_finish(_reason, %__MODULE__{done: true} = state), do: {[], state}
@@ -513,13 +476,10 @@ defmodule LLMAgent.Codec.OpenAI do
 
     usage = usage(body["usage"], %{input_tokens: nil, output_tokens: nil})
 
-    [{:start, %{model: body["model"]}}] ++
-      indexed ++ [{:stop, stop_reason(choice["finish_reason"]), usage}]
+    [{:start, %{model: body["model"]}}] ++ indexed ++ [{:stop, stop_reason(choice["finish_reason"]), usage}]
   end
 
-  defp whole_text(text, kind, tag) when is_binary(text) and text != "",
-    do: [{kind, [{tag, text}]}]
-
+  defp whole_text(text, kind, tag) when is_binary(text) and text != "", do: [{kind, [{tag, text}]}]
   defp whole_text(_absent, _kind, _tag), do: []
 
   defp whole_tool_call(call) do

@@ -20,18 +20,18 @@ defmodule LLMAgent do
   # Map legacy tool atom names to their substrate coordinates. Stays here
   # until §7.6 step 9 (LLM-facing catalog regeneration), then is removed.
   @legacy_coordinate %{
-    bash: {"function.shell.bash", :action},
-    web: {"function.http", nil},
-    dbus: {"function.dbus", nil},
-    systemd: {"function.systemd", nil},
-    inotify: {"resource.fs.events", :stream},
-    udev: {"resource.hardware.events", nil},
-    file: {"resource.fs.file", nil},
-    net: {"resource.network", :query},
-    proc: {"resource.proc", :query},
-    crypto: {"function.crypto", :compute},
+    bash:        {"function.shell.bash",              :action},
+    web:         {"function.http",                    nil},
+    dbus:        {"function.dbus",                    nil},
+    systemd:     {"function.systemd",                 nil},
+    inotify:     {"resource.fs.events",               :stream},
+    udev:        {"resource.hardware.events",          nil},
+    file:        {"resource.fs.file",                 nil},
+    net:         {"resource.network",                 :query},
+    proc:        {"resource.proc",                    :query},
+    crypto:      {"function.crypto",                  :compute},
     tuple_space: {"function.coordination.tuplespace", nil},
-    agent: {"function.agent", :spawn}
+    agent:       {"function.agent",                   :spawn}
   }
 
   ## Public API
@@ -58,9 +58,7 @@ defmodule LLMAgent do
 
     parent_ref =
       case parent do
-        nil ->
-          nil
-
+        nil -> nil
         parent_name ->
           case GenServer.whereis({:global, parent_name}) do
             nil -> nil
@@ -86,16 +84,11 @@ defmodule LLMAgent do
     }
 
     unless restored? do
-      Events.emit(
-        :message,
-        "agent.message",
-        %{
-          agent_id: name,
-          role: "system",
-          content: hd(history).content
-        },
-        __MODULE__
-      )
+      Events.emit(:message, "agent.message", %{
+        agent_id: name,
+        role: "system",
+        content: hd(history).content
+      }, __MODULE__)
     end
 
     memory.store(name, :history, state.history)
@@ -126,24 +119,14 @@ defmodule LLMAgent do
   def handle_info({ref, {:ok, content}}, state) when is_binary(content) do
     Process.demonitor(ref, [:flush])
 
-    Events.emit(
-      :llm_response,
-      "agent.llm_response",
-      %{
-        content_length: String.length(content),
-        is_tool_call: tool_call?(content)
-      },
-      __MODULE__
-    )
+    Events.emit(:llm_response, "agent.llm_response", %{
+      content_length: String.length(content),
+      is_tool_call: tool_call?(content)
+    }, __MODULE__)
 
     case parse_tool_call(content) do
       {:tool_call, tool, action, args} ->
-        Events.emit(
-          :tool_dispatch,
-          "agent.tool_dispatch",
-          %{agent_id: state.name, tool: tool, action: action},
-          __MODULE__
-        )
+        Events.emit(:tool_dispatch, "agent.tool_dispatch", %{agent_id: state.name, tool: tool, action: action}, __MODULE__)
 
         result = timed_dispatch(tool, action, args, state.allowed_tools, state.name)
         followup = format_tool_result(result)
@@ -174,15 +157,10 @@ defmodule LLMAgent do
   def handle_info({ref, {:error, reason}}, state) do
     Process.demonitor(ref, [:flush])
 
-    Events.emit(
-      :error,
-      "agent.error",
-      %{
-        reason: inspect(reason),
-        source: :llm_request
-      },
-      __MODULE__
-    )
+    Events.emit(:error, "agent.error", %{
+      reason: inspect(reason),
+      source: :llm_request
+    }, __MODULE__)
 
     Logger.error("LLM request failed: #{inspect(reason)}")
     {:noreply, state}
@@ -198,15 +176,10 @@ defmodule LLMAgent do
   end
 
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %{parent_ref: ref} = state) do
-    Events.emit(
-      :orphaned,
-      "agent.orphaned",
-      %{
-        agent_id: state.name,
-        parent: state.parent
-      },
-      __MODULE__
-    )
+    Events.emit(:orphaned, "agent.orphaned", %{
+      agent_id: state.name,
+      parent: state.parent
+    }, __MODULE__)
 
     {:noreply, %{state | parent_ref: nil}}
   end
@@ -234,16 +207,13 @@ defmodule LLMAgent do
 
   defp do_prompt(user_input, state) do
     request_id = "req_" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
-
-    trace_id =
-      state[:trace_id] || "trace_" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+    trace_id = state[:trace_id] || "trace_" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
 
     Contexts.new(%{
       request_id: request_id,
       trace_id: trace_id,
       actor: "agent"
     })
-
     Contexts.put(:role, state.role)
     Contexts.put(:model, state.model)
     Contexts.put(:agent_name, state.name)
@@ -275,34 +245,24 @@ defmodule LLMAgent do
         dispatch_tool(tool, action, args, allowed)
       else
         {:error,
-         ErrorStruct.new(
-           "tool_not_permitted",
-           "tool",
-           "tool :#{tool} not permitted",
-           "Use one of the allowed tools"
-         )}
+         ErrorStruct.new("tool_not_permitted", "tool",
+           "tool :#{tool} not permitted", "Use one of the allowed tools")}
       end
 
     duration_ms = System.monotonic_time(:millisecond) - start
 
-    {result_status, _} =
-      case result do
-        {:ok, _} -> {:ok, nil}
-        {:error, _} -> {:error, nil}
-      end
+    {result_status, _} = case result do
+      {:ok, _} -> {:ok, nil}
+      {:error, _} -> {:error, nil}
+    end
 
-    Events.emit(
-      :invocation,
-      "tool.#{tool}",
-      %{
-        agent_id: agent_id,
-        action: action,
-        args: sanitize_args(args),
-        result: result_status,
-        duration_ms: duration_ms
-      },
-      __MODULE__
-    )
+    Events.emit(:invocation, "tool.#{tool}", %{
+      agent_id: agent_id,
+      action: action,
+      args: sanitize_args(args),
+      result: result_status,
+      duration_ms: duration_ms
+    }, __MODULE__)
 
     result
   end
@@ -443,16 +403,11 @@ defmodule LLMAgent do
     updated = update_in(state.history, &(&1 ++ [%{role: role, content: content}]))
     state.memory.store(state.name, :history, updated.history)
 
-    Events.emit(
-      :message,
-      "agent.message",
-      %{
-        agent_id: state.name,
-        role: role,
-        content: content
-      },
-      __MODULE__
-    )
+    Events.emit(:message, "agent.message", %{
+      agent_id: state.name,
+      role: role,
+      content: content
+    }, __MODULE__)
 
     updated
   end
@@ -508,9 +463,7 @@ defmodule LLMAgent do
     Map.new(args, fn
       {k, v} when is_binary(v) and byte_size(v) > 200 ->
         {k, String.slice(v, 0, 200) <> "...(truncated)"}
-
-      {k, v} ->
-        {k, v}
+      {k, v} -> {k, v}
     end)
   end
 

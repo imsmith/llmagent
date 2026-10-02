@@ -29,8 +29,7 @@ defmodule LLMAgent.MCP.ToolProxy do
           call_connection(conn_name, mcp_tool, args)
 
         :error ->
-          {:error,
-           ErrorStruct.new("mcp_tool_not_found", nil, "MCP tool #{tool_atom} not in tool map")}
+          {:error, ErrorStruct.new("mcp_tool_not_found", nil, "MCP tool #{tool_atom} not in tool map")}
       end
     else
       {:error, ErrorStruct.new("mcp_proxy_error", nil, "No tool context available")}
@@ -42,23 +41,18 @@ defmodule LLMAgent.MCP.ToolProxy do
       [{conn_pid, _value}] ->
         case GenServer.call(conn_pid, {:call_tool, mcp_tool, args}, 30_000) do
           {:ok, result} ->
-            {:ok,
-             %{
-               output: result.output,
-               metadata: Map.merge(result.metadata, %{mcp_server: conn_name, mcp_tool: mcp_tool})
-             }}
+            {:ok, %{
+              output: result.output,
+              metadata: Map.merge(result.metadata, %{mcp_server: conn_name, mcp_tool: mcp_tool})
+            }}
 
           {:error, _} = err ->
             err
         end
 
       [] ->
-        {:error,
-         ErrorStruct.new(
-           "mcp_connection_not_found",
-           nil,
-           "MCP connection #{conn_name} not found in registry"
-         )}
+        {:error, ErrorStruct.new("mcp_connection_not_found", nil,
+          "MCP connection #{conn_name} not found in registry")}
     end
   end
 

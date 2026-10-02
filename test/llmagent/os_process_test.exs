@@ -7,12 +7,8 @@ defmodule LLMAgent.OSProcessTest do
   # A killed child stays in /proc as a zombie until reaped, so existence alone
   # is not liveness — read the state field out of stat.
   defp spawn_sleeper do
-    port =
-      Port.open(
-        {:spawn_executable, System.find_executable("sleep")},
-        [:binary, :exit_status, {:args, ["300"]}]
-      )
-
+    port = Port.open({:spawn_executable, System.find_executable("sleep")},
+                     [:binary, :exit_status, {:args, ["300"]}])
     {:os_pid, os_pid} = Port.info(port, :os_pid)
     {port, os_pid}
   end
@@ -61,18 +57,9 @@ defmodule LLMAgent.OSProcessTest do
       # Perl forks and never waits, leaving the child as a stable zombie.
       perl_path = System.find_executable("perl")
       cmd = perl_path
-
-      args = [
-        "-e",
-        "my $pid = fork(); if (!defined $pid) { die } if ($pid == 0) { exit 0 } sleep 6;"
-      ]
-
-      port =
-        Port.open(
-          {:spawn_executable, cmd},
-          [:binary, :exit_status, {:args, args}]
-        )
-
+      args = ["-e", "my $pid = fork(); if (!defined $pid) { die } if ($pid == 0) { exit 0 } sleep 6;"]
+      port = Port.open({:spawn_executable, cmd},
+                       [:binary, :exit_status, {:args, args}])
       {:os_pid, parent_pid} = Port.info(port, :os_pid)
 
       # Find the zombie child by polling the parent's children list.
@@ -116,13 +103,11 @@ defmodule LLMAgent.OSProcessTest do
 
   defp read_children(children_file) do
     with {:ok, content} <- File.read(children_file) do
-      pids =
-        content
-        |> String.trim()
-        |> String.split(" ")
-        |> Enum.filter(&(&1 != ""))
-        |> Enum.map(&String.to_integer/1)
-
+      pids = content
+             |> String.trim()
+             |> String.split(" ")
+             |> Enum.filter(&(&1 != ""))
+             |> Enum.map(&String.to_integer/1)
       {:ok, pids}
     end
   end

@@ -1,7 +1,6 @@
 defmodule LLMAgent.Tool.BindingsTest do
   @moduledoc false
-  # mutates persistent_term
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: false   # mutates persistent_term
 
   alias LLMAgent.Tool.Bindings
 
@@ -51,7 +50,6 @@ defmodule LLMAgent.Tool.BindingsTest do
   describe "canonical bindings" do
     test ":openai_chat is registered at boot" do
       Bindings.init_registry()
-
       assert {:ok, LLMAgent.Tool.Adapter.OpenAIChat} =
                Bindings.adapter_for(:openai_chat)
     end

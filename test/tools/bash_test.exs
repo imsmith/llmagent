@@ -69,9 +69,8 @@ defmodule LLMAgent.Tools.BashTest do
       policy = %Policy{allow: ["function.shell.bash"], fidelity_min: :authoritative}
 
       assert {:ok, ack, meta} =
-               Dispatcher.act("function.shell.bash", "exec", %{"command" => "echo hello"}, nil,
-                 policy: policy
-               )
+               Dispatcher.act("function.shell.bash", "exec",
+                 %{"command" => "echo hello"}, nil, policy: policy)
 
       # perform("exec", ...) returns {:ok, %{output: string, metadata: map}}
       # act/3 unwraps to {:ok, output_string, metadata_map}

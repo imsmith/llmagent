@@ -3,8 +3,7 @@ defmodule LLMAgent.Tools.DiscoveryTest do
   Tests for LLMAgent.Tools.Discovery GenServer.
   """
 
-  # owns a named GenServer
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: false   # owns a named GenServer
   alias LLMAgent.{ToolAd, ToolQuery, Tools.Discovery}
 
   setup do
@@ -56,7 +55,7 @@ defmodule LLMAgent.Tools.DiscoveryTest do
   describe "find_all/1 — ranking" do
     test "ranks authoritative > trained > speculative" do
       auth = ad(%{id: "a1", coordinate: "function.x", fidelity: :authoritative})
-      tr = ad(%{id: "a2", coordinate: "function.x", fidelity: :trained, confidence: 0.8})
+      tr   = ad(%{id: "a2", coordinate: "function.x", fidelity: :trained, confidence: 0.8})
       spec = ad(%{id: "a3", coordinate: "function.x", fidelity: :speculative, confidence: 0.5})
 
       :ok = Discovery.register(spec)
@@ -84,22 +83,20 @@ defmodule LLMAgent.Tools.DiscoveryTest do
 
     test "filters by fidelity_min" do
       auth = ad(%{id: "a", coordinate: "function.z", fidelity: :authoritative})
-      tr = ad(%{id: "t", coordinate: "function.z", fidelity: :trained, confidence: 0.5})
+      tr   = ad(%{id: "t", coordinate: "function.z", fidelity: :trained, confidence: 0.5})
 
       :ok = Discovery.register(auth)
       :ok = Discovery.register(tr)
 
       {:ok, results} =
-        Discovery.find_all(
-          ToolQuery.new(%{coordinate: "function.z", fidelity_min: :authoritative})
-        )
+        Discovery.find_all(ToolQuery.new(%{coordinate: "function.z", fidelity_min: :authoritative}))
 
       assert Enum.map(results, & &1.id) == ["a"]
     end
 
     test "filters by required kinds" do
       query_only = ad(%{id: "qo", coordinate: "function.q", kinds: [:query]})
-      both = ad(%{id: "bb", coordinate: "function.q", kinds: [:query, :stream]})
+      both       = ad(%{id: "bb", coordinate: "function.q", kinds: [:query, :stream]})
 
       :ok = Discovery.register(query_only)
       :ok = Discovery.register(both)
@@ -249,7 +246,6 @@ defmodule LLMAgent.Tools.DiscoveryTest do
       :ok = Discovery.sweep_now()
 
       assert_receive {:tool_removed, "exp", "function.exp", :lease_expired}, 500
-
       assert {:error, :not_found} =
                Discovery.find_one(ToolQuery.new(%{coordinate: "function.exp"}))
     end

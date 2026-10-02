@@ -8,11 +8,9 @@ defmodule LLMAgent.MCP.ConnectionTest do
 
   setup do
     :persistent_term.put(@tool_map_key, %{})
-
     on_exit(fn ->
       :persistent_term.put(@tool_map_key, %{})
     end)
-
     :ok
   end
 
@@ -43,12 +41,11 @@ defmodule LLMAgent.MCP.ConnectionTest do
 
   describe "init lifecycle" do
     test "performs handshake, discovers tools, and registers them" do
-      {:ok, pid} =
-        Connection.start_link(
-          name: :test_mcp,
-          transport: LLMAgent.MCP.Transport.Mock,
-          transport_opts: [tools: @mock_tools]
-        )
+      {:ok, pid} = Connection.start_link(
+        name: :test_mcp,
+        transport: LLMAgent.MCP.Transport.Mock,
+        transport_opts: [tools: @mock_tools]
+      )
 
       assert {:ok, LLMAgent.MCP.ToolProxy} = LLMAgent.Tools.get(:test_mcp_create_issue)
       assert {:ok, LLMAgent.MCP.ToolProxy} = LLMAgent.Tools.get(:test_mcp_list_repos)
@@ -64,12 +61,11 @@ defmodule LLMAgent.MCP.ConnectionTest do
     end
 
     test "unregisters tools on terminate" do
-      {:ok, pid} =
-        Connection.start_link(
-          name: :test_cleanup,
-          transport: LLMAgent.MCP.Transport.Mock,
-          transport_opts: [tools: @mock_tools]
-        )
+      {:ok, pid} = Connection.start_link(
+        name: :test_cleanup,
+        transport: LLMAgent.MCP.Transport.Mock,
+        transport_opts: [tools: @mock_tools]
+      )
 
       assert {:ok, _} = LLMAgent.Tools.get(:test_cleanup_create_issue)
       GenServer.stop(pid)
@@ -84,16 +80,13 @@ defmodule LLMAgent.MCP.ConnectionTest do
 
   describe "call_tool" do
     test "dispatches tools/call and returns formatted result" do
-      {:ok, pid} =
-        Connection.start_link(
-          name: :test_call,
-          transport: LLMAgent.MCP.Transport.Mock,
-          transport_opts: [tools: @mock_tools]
-        )
+      {:ok, pid} = Connection.start_link(
+        name: :test_call,
+        transport: LLMAgent.MCP.Transport.Mock,
+        transport_opts: [tools: @mock_tools]
+      )
 
-      {:ok, result} =
-        GenServer.call(pid, {:call_tool, "create_issue", %{"repo" => "foo", "title" => "bar"}})
-
+      {:ok, result} = GenServer.call(pid, {:call_tool, "create_issue", %{"repo" => "foo", "title" => "bar"}})
       assert result.output =~ "result for create_issue"
       assert result.metadata == %{}
 
@@ -103,12 +96,11 @@ defmodule LLMAgent.MCP.ConnectionTest do
 
   describe "info" do
     test "returns connection metadata" do
-      {:ok, pid} =
-        Connection.start_link(
-          name: :test_info,
-          transport: LLMAgent.MCP.Transport.Mock,
-          transport_opts: [tools: @mock_tools]
-        )
+      {:ok, pid} = Connection.start_link(
+        name: :test_info,
+        transport: LLMAgent.MCP.Transport.Mock,
+        transport_opts: [tools: @mock_tools]
+      )
 
       info = GenServer.call(pid, :info)
       assert info.name == :test_info

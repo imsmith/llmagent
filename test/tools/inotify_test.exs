@@ -186,9 +186,8 @@ defmodule LLMAgent.Tools.InotifyTest do
       policy = %Policy{allow: ["resource.fs.events"], fidelity_min: :authoritative}
 
       {:ok, sub_ref} =
-        Dispatcher.subscribe("resource.fs.events", "watch", %{"path" => dir}, self(),
-          policy: policy
-        )
+        Dispatcher.subscribe("resource.fs.events", "watch", %{"path" => dir},
+          self(), policy: policy)
 
       assert match?({:inotify_watch, _}, sub_ref)
     end

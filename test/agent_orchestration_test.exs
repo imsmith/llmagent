@@ -35,16 +35,12 @@ defmodule LLMAgent.AgentOrchestrationTest do
       root = start_agent(:orch_root_async)
 
       LLMAgent.prompt({:global, :orch_root_async}, "do something")
-
-      simulate_llm(
-        root,
-        tool_json("agent", "spawn", %{
-          "name" => "orch_async_child",
-          "prompt" => "do work",
-          "tools" => ["bash"],
-          "mode" => "async"
-        })
-      )
+      simulate_llm(root, tool_json("agent", "spawn", %{
+        "name" => "orch_async_child",
+        "prompt" => "do work",
+        "tools" => ["bash"],
+        "mode" => "async"
+      }))
 
       assert is_pid(GenServer.whereis({:global, :orch_async_child}))
       child_state = :sys.get_state({:global, :orch_async_child})
@@ -76,16 +72,12 @@ defmodule LLMAgent.AgentOrchestrationTest do
       end)
 
       LLMAgent.prompt({:global, :orch_dn_child}, "go")
-
-      simulate_llm(
-        child_pid,
-        tool_json("agent", "spawn", %{
-          "name" => "grandchild",
-          "prompt" => "x",
-          "tools" => ["bash"],
-          "mode" => "async"
-        })
-      )
+      simulate_llm(child_pid, tool_json("agent", "spawn", %{
+        "name" => "grandchild",
+        "prompt" => "x",
+        "tools" => ["bash"],
+        "mode" => "async"
+      }))
 
       state = :sys.get_state({:global, :orch_dn_child})
       function_msg = Enum.find(state.history, &(&1.role == "function"))

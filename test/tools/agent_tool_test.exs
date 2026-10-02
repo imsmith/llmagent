@@ -27,7 +27,7 @@ defmodule LLMAgent.Tools.AgentTest do
   describe "describe/0" do
     test "lists all actions" do
       desc = AgentTool.describe()
-      for a <- ~w(spawn kill list status), do: assert(desc =~ a)
+      for a <- ~w(spawn kill list status), do: assert desc =~ a
     end
   end
 
@@ -196,14 +196,12 @@ defmodule LLMAgent.Tools.AgentTest do
 
       child_name = :"substrate_spawn_test_#{System.unique_integer([:positive])}"
 
-      spec =
-        {"start",
-         %{
-           "name" => Atom.to_string(child_name),
-           "prompt" => "noop",
-           "tools" => ["bash"],
-           "mode" => "async"
-         }}
+      spec = {"start", %{
+        "name" => Atom.to_string(child_name),
+        "prompt" => "noop",
+        "tools" => ["bash"],
+        "mode" => "async"
+      }}
 
       assert {:ok, child_ref} =
                Dispatcher.spawn_child("function.agent", spec, policy: policy)

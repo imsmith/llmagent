@@ -74,12 +74,8 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChat do
     ]
 
     case Req.post("#{host}/chat/completions", request) do
-      {:ok, %Req.Response{status: 200} = resp} ->
-        finish(stream_state(resp), into, model, started)
-
-      {:ok, %Req.Response{status: status} = resp} ->
-        {:error, {:http_error, status, error_body(stream_state(resp))}}
-
+      {:ok, %Req.Response{status: 200} = resp} -> finish(stream_state(resp), into, model, started)
+      {:ok, %Req.Response{status: status} = resp} -> {:error, {:http_error, status, error_body(stream_state(resp))}}
       {:error, reason} ->
         if :atomics.get(replying, 1) == 1, do: into.({:error, reason})
         {:error, reason}
@@ -88,8 +84,8 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChat do
 
   def generate(%{api_host: host, model: model} = _payload, "chat", args, opts) do
     messages = Map.fetch!(args, :messages)
-    timeout = Keyword.get(opts, :timeout, 120_000)
-    client = %{api_host: host, model: model, timeout: timeout}
+    timeout  = Keyword.get(opts, :timeout, 120_000)
+    client   = %{api_host: host, model: model, timeout: timeout}
 
     started = System.monotonic_time(:millisecond)
 
@@ -124,9 +120,7 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChat do
 
   defp receive_data(_status, data, state, _into) do
     room = @max_error_body - byte_size(state.error_body)
-
-    {:cont,
-     %{state | error_body: state.error_body <> binary_part(data, 0, min(room, byte_size(data)))}}
+    {:cont, %{state | error_body: state.error_body <> binary_part(data, 0, min(room, byte_size(data)))}}
   end
 
   defp deliver(events, state, into) do

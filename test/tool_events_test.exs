@@ -22,18 +22,12 @@ defmodule LLMAgent.ToolEventsTest do
       # We test by calling the tool directly and recording manually,
       # since the agent's dispatch is private. Instead, we verify
       # the event infrastructure works end-to-end.
-      event =
-        EventStruct.new(
-          :invocation,
-          "tool.bash",
-          %{
-            action: "exec",
-            args: %{"command" => "echo hello"},
-            result: :ok,
-            duration_ms: 5
-          },
-          LLMAgent
-        )
+      event = EventStruct.new(:invocation, "tool.bash", %{
+        action: "exec",
+        args: %{"command" => "echo hello"},
+        result: :ok,
+        duration_ms: 5
+      }, LLMAgent)
 
       EventLog.record(event)
       EventBus.broadcast("tool.bash", event)
@@ -53,16 +47,10 @@ defmodule LLMAgent.ToolEventsTest do
     test "agent.prompt event structure" do
       EventBus.subscribe("agent.prompt")
 
-      event =
-        EventStruct.new(
-          :prompt,
-          "agent.prompt",
-          %{
-            content: "What is the uptime?",
-            role: :sysadmin
-          },
-          LLMAgent
-        )
+      event = EventStruct.new(:prompt, "agent.prompt", %{
+        content: "What is the uptime?",
+        role: :sysadmin
+      }, LLMAgent)
 
       EventLog.record(event)
       EventBus.broadcast("agent.prompt", event)
@@ -78,16 +66,10 @@ defmodule LLMAgent.ToolEventsTest do
     test "agent.error event structure" do
       EventBus.subscribe("agent.error")
 
-      event =
-        EventStruct.new(
-          :error,
-          "agent.error",
-          %{
-            reason: "connection refused",
-            source: :llm_request
-          },
-          LLMAgent
-        )
+      event = EventStruct.new(:error, "agent.error", %{
+        reason: "connection refused",
+        source: :llm_request
+      }, LLMAgent)
 
       EventLog.record(event)
       EventBus.broadcast("agent.error", event)
@@ -103,18 +85,12 @@ defmodule LLMAgent.ToolEventsTest do
       tools = [:bash, :web, :file, :crypto]
 
       for tool <- tools do
-        event =
-          EventStruct.new(
-            :invocation,
-            "tool.#{tool}",
-            %{
-              action: "test",
-              args: %{},
-              result: :ok,
-              duration_ms: 1
-            },
-            LLMAgent
-          )
+        event = EventStruct.new(:invocation, "tool.#{tool}", %{
+          action: "test",
+          args: %{},
+          result: :ok,
+          duration_ms: 1
+        }, LLMAgent)
 
         EventLog.record(event)
       end
@@ -148,14 +124,11 @@ defmodule LLMAgent.ToolEventsTest do
       long_value = String.duplicate("x", 300)
       args = %{"command" => long_value, "short" => "ok"}
 
-      sanitized =
-        Map.new(args, fn
-          {k, v} when is_binary(v) and byte_size(v) > 200 ->
-            {k, String.slice(v, 0, 200) <> "...(truncated)"}
-
-          {k, v} ->
-            {k, v}
-        end)
+      sanitized = Map.new(args, fn
+        {k, v} when is_binary(v) and byte_size(v) > 200 ->
+          {k, String.slice(v, 0, 200) <> "...(truncated)"}
+        {k, v} -> {k, v}
+      end)
 
       assert String.length(sanitized["command"]) < 300
       assert sanitized["command"] =~ "...(truncated)"
@@ -177,17 +150,15 @@ defmodule LLMAgent.ToolEventsTest do
     test "multiple subscribers receive the same event" do
       parent = self()
 
-      pids =
-        for _ <- 1..3 do
-          spawn(fn ->
-            EventBus.subscribe("tool.crypto")
-            send(parent, :subscribed)
-
-            receive do
-              {:event, topic, payload} -> send(parent, {:got, self(), topic, payload})
-            end
-          end)
-        end
+      pids = for _ <- 1..3 do
+        spawn(fn ->
+          EventBus.subscribe("tool.crypto")
+          send(parent, :subscribed)
+          receive do
+            {:event, topic, payload} -> send(parent, {:got, self(), topic, payload})
+          end
+        end)
+      end
 
       # Wait for all subscribers
       for _ <- pids, do: assert_receive(:subscribed)

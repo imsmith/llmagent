@@ -55,30 +55,17 @@ defmodule LLMAgent.Tools.Udev do
   """
   @impl true
   def perform("list", _args) do
-    with {blk_json, 0} <-
-           System.cmd("lsblk", ["-J", "-o", "NAME,SIZE,TYPE,MOUNTPOINT"], stderr_to_stdout: true),
+    with {blk_json, 0} <- System.cmd("lsblk", ["-J", "-o", "NAME,SIZE,TYPE,MOUNTPOINT"], stderr_to_stdout: true),
          {usb_out, 0} <- System.cmd("lsusb", [], stderr_to_stdout: true) do
-      block_devices =
-        case Jason.decode(blk_json) do
-          {:ok, %{"blockdevices" => devs}} -> devs
-          _ -> blk_json
-        end
-
+      block_devices = case Jason.decode(blk_json) do
+        {:ok, %{"blockdevices" => devs}} -> devs
+        _ -> blk_json
+      end
       usb_devices = parse_lsusb(usb_out)
-
-      {:ok,
-       %{
-         output: %{block_devices: block_devices, usb_devices: usb_devices},
-         metadata: %{action: "list"}
-       }}
+      {:ok, %{output: %{block_devices: block_devices, usb_devices: usb_devices}, metadata: %{action: "list"}}}
     else
       {err, code} ->
-        {:error,
-         ErrorStruct.new(
-           "command_failed",
-           "udev",
-           "Device listing failed (exit #{code}): #{String.trim(err)}"
-         )}
+        {:error, ErrorStruct.new("command_failed", "udev", "Device listing failed (exit #{code}): #{String.trim(err)}")}
     end
   end
 
@@ -87,44 +74,22 @@ defmodule LLMAgent.Tools.Udev do
       {out, 0} ->
         props = parse_udevadm(out)
         {:ok, %{output: props, metadata: %{path: path}}}
-
       {out, code} ->
-        {:error,
-         ErrorStruct.new(
-           "command_failed",
-           "path",
-           "udevadm failed (exit #{code}): #{String.trim(out)}"
-         )}
+        {:error, ErrorStruct.new("command_failed", "path", "udevadm failed (exit #{code}): #{String.trim(out)}")}
     end
   end
 
   def perform("usb", _args) do
     case System.cmd("lsusb", [], stderr_to_stdout: true) do
-      {out, 0} ->
-        {:ok, %{output: parse_lsusb(out), metadata: %{action: "usb"}}}
-
-      {out, code} ->
-        {:error,
-         ErrorStruct.new(
-           "command_failed",
-           "lsusb",
-           "lsusb failed (exit #{code}): #{String.trim(out)}"
-         )}
+      {out, 0} -> {:ok, %{output: parse_lsusb(out), metadata: %{action: "usb"}}}
+      {out, code} -> {:error, ErrorStruct.new("command_failed", "lsusb", "lsusb failed (exit #{code}): #{String.trim(out)}")}
     end
   end
 
   def perform("pci", _args) do
     case System.cmd("lspci", [], stderr_to_stdout: true) do
-      {out, 0} ->
-        {:ok, %{output: parse_lspci(out), metadata: %{action: "pci"}}}
-
-      {out, code} ->
-        {:error,
-         ErrorStruct.new(
-           "command_failed",
-           "lspci",
-           "lspci failed (exit #{code}): #{String.trim(out)}"
-         )}
+      {out, 0} -> {:ok, %{output: parse_lspci(out), metadata: %{action: "pci"}}}
+      {out, code} -> {:error, ErrorStruct.new("command_failed", "lspci", "lspci failed (exit #{code}): #{String.trim(out)}")}
     end
   end
 
@@ -151,22 +116,13 @@ defmodule LLMAgent.Tools.Udev do
       },
       affordance: %{
         declared: [
-          %{
-            intent: "enumerate and inspect connected hardware devices",
-            suits: "device discovery and diagnostics flows",
-            avoid_when: nil
-          }
+          %{intent: "enumerate and inspect connected hardware devices", suits: "device discovery and diagnostics flows", avoid_when: nil}
         ],
         learned: [],
         open: false
       },
       fidelity: :authoritative,
-      provenance: %{
-        source: "llmagent.builtin",
-        produced_at: ~U[2026-05-18 00:00:00Z],
-        based_on: [],
-        signature: nil
-      },
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
       lease: :permanent,
       meta: %{}
     })
@@ -190,15 +146,9 @@ defmodule LLMAgent.Tools.Udev do
             [key, val] -> Map.put(acc, String.downcase(key), val)
             _ -> acc
           end
-
-        "N: " <> name ->
-          Map.put(acc, "devname", String.trim(name))
-
-        "S: " <> link ->
-          Map.update(acc, "symlinks", [String.trim(link)], &[String.trim(link) | &1])
-
-        _ ->
-          acc
+        "N: " <> name -> Map.put(acc, "devname", String.trim(name))
+        "S: " <> link -> Map.update(acc, "symlinks", [String.trim(link)], &[String.trim(link) | &1])
+        _ -> acc
       end
     end)
   end
@@ -208,11 +158,8 @@ defmodule LLMAgent.Tools.Udev do
     |> String.split("\n", trim: true)
     |> Enum.map(fn line ->
       case Regex.run(~r/Bus (\d+) Device (\d+): ID (\S+) (.*)/, line) do
-        [_, bus, dev, id, desc] ->
-          %{bus: bus, device: dev, id: id, description: String.trim(desc)}
-
-        _ ->
-          %{raw: String.trim(line)}
+        [_, bus, dev, id, desc] -> %{bus: bus, device: dev, id: id, description: String.trim(desc)}
+        _ -> %{raw: String.trim(line)}
       end
     end)
   end

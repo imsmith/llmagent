@@ -84,7 +84,6 @@ defmodule LLMAgent.Tools.TupleSpaceTest do
     test "returns a string mentioning the actions" do
       desc = TS.describe()
       assert is_binary(desc)
-
       for a <- ~w(write read take read_nowait take_nowait list_spaces create_space destroy_space) do
         assert desc =~ a, "describe missing #{a}"
       end
@@ -98,11 +97,7 @@ defmodule LLMAgent.Tools.TupleSpaceTest do
 
       # write is a cast; sync via a blocking read before non-blocking ETS peek
       assert {:ok, %{output: ["greeting", "hi"]}} =
-               TS.perform("read", %{
-                 "space" => "default",
-                 "pattern" => ["greeting", "_"],
-                 "timeout" => 500
-               })
+               TS.perform("read", %{"space" => "default", "pattern" => ["greeting", "_"], "timeout" => 500})
 
       assert {:ok, %{output: ["greeting", "hi"]}} =
                TS.perform("read_nowait", %{"space" => "default", "pattern" => ["greeting", "_"]})
@@ -117,10 +112,8 @@ defmodule LLMAgent.Tools.TupleSpaceTest do
   describe "perform/2 — take and take_nowait" do
     test "take_nowait removes the tuple" do
       :ok = TupleSpace.out({"task", "do it"})
-
       assert {:ok, %{output: ["task", "do it"]}} =
                TS.perform("take_nowait", %{"space" => "default", "pattern" => ["task", "_"]})
-
       assert {:error, %ErrorStruct{reason: "no_match"}} =
                TS.perform("take_nowait", %{"space" => "default", "pattern" => ["task", "_"]})
     end
@@ -152,14 +145,12 @@ defmodule LLMAgent.Tools.TupleSpaceTest do
   describe "perform/2 — read with timeout" do
     test "non-destructive blocking read" do
       :ok = TupleSpace.out({"peek", "v"})
-
       assert {:ok, %{output: ["peek", "v"]}} =
                TS.perform("read", %{
                  "space" => "default",
                  "pattern" => ["peek", "_"],
                  "timeout" => 500
                })
-
       # Still there
       assert {:ok, %{output: ["peek", "v"]}} =
                TS.perform("read_nowait", %{"space" => "default", "pattern" => ["peek", "_"]})

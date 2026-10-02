@@ -48,12 +48,7 @@ defmodule LLMAgent.Tools.CryptoTest do
         Crypto.perform("sign", %{"type" => "ed25519", "data" => "test", "private_key" => priv})
 
       {:ok, %{output: true}} =
-        Crypto.perform("verify", %{
-          "type" => "ed25519",
-          "data" => "test",
-          "signature" => sig,
-          "public_key" => pub
-        })
+        Crypto.perform("verify", %{"type" => "ed25519", "data" => "test", "signature" => sig, "public_key" => pub})
     end
   end
 
@@ -85,15 +80,13 @@ defmodule LLMAgent.Tools.CryptoTest do
 
       assert {:ok, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"} =
                Dispatcher.compute("function.crypto", "sha256", %{"data" => "hello"},
-                 policy: policy
-               )
+                 policy: policy)
     end
 
     test "dispatcher denies when policy.allow is empty" do
       assert {:error, :forbidden, :not_allowed} =
                Dispatcher.compute("function.crypto", "sha256", %{"data" => "hello"},
-                 policy: %Policy{}
-               )
+                 policy: %Policy{})
     end
   end
 end

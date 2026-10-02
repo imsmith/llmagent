@@ -65,8 +65,7 @@ defmodule LLMAgent.Tools.Proc do
         {:ok, %{output: result, metadata: %{count: length(result)}}}
 
       {err, code} ->
-        {:error,
-         ErrorStruct.new("command_failed", "ps", "ps failed (exit #{code}): #{String.trim(err)}")}
+        {:error, ErrorStruct.new("command_failed", "ps", "ps failed (exit #{code}): #{String.trim(err)}")}
     end
   end
 
@@ -109,22 +108,13 @@ defmodule LLMAgent.Tools.Proc do
       },
       affordance: %{
         declared: [
-          %{
-            intent: "inspect running processes via /proc",
-            suits: "diagnostic queries",
-            avoid_when: nil
-          }
+          %{intent: "inspect running processes via /proc", suits: "diagnostic queries", avoid_when: nil}
         ],
         learned: [],
         open: false
       },
       fidelity: :authoritative,
-      provenance: %{
-        source: "llmagent.builtin",
-        produced_at: ~U[2026-05-18 00:00:00Z],
-        based_on: [],
-        signature: nil
-      },
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
       lease: :permanent,
       meta: %{}
     })

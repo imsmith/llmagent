@@ -197,7 +197,6 @@ defmodule LLMAgent.AgentLifecycleTest do
 
       # Restart with same name — remove on_exit from first start
       {:ok, pid2} = LLMAgent.start_link(name: :restart_test)
-
       on_exit(fn ->
         if Process.alive?(pid2), do: GenServer.stop({:global, :restart_test})
       end)
@@ -216,7 +215,6 @@ defmodule LLMAgent.AgentLifecycleTest do
       GenServer.stop({:global, :restart_prompt})
 
       {:ok, pid2} = LLMAgent.start_link(name: :restart_prompt)
-
       on_exit(fn ->
         if Process.alive?(pid2), do: GenServer.stop({:global, :restart_prompt})
       end)
@@ -335,16 +333,11 @@ defmodule LLMAgent.AgentLifecycleTest do
     test "file tool dispatch works through agent" do
       pid = start_agent(:dispatch_file)
 
-      path =
-        Path.join(System.tmp_dir!(), "agent_lifecycle_test_#{System.unique_integer([:positive])}")
+      path = Path.join(System.tmp_dir!(), "agent_lifecycle_test_#{System.unique_integer([:positive])}")
 
-      simulate_llm_response(
-        pid,
-        tool_json("file", "write", %{
-          "path" => path,
-          "content" => "lifecycle"
-        })
-      )
+      simulate_llm_response(pid, tool_json("file", "write", %{
+        "path" => path, "content" => "lifecycle"
+      }))
 
       state = get_state(:dispatch_file)
       function_msg = Enum.find(state.history, &(&1.role == "function"))
@@ -390,7 +383,6 @@ defmodule LLMAgent.AgentLifecycleTest do
 
       # Restart with same name — should restore history from ETS
       {:ok, pid2} = LLMAgent.start_link(name: name)
-
       on_exit(fn ->
         if Process.alive?(pid2), do: GenServer.stop({:global, name})
       end)
@@ -423,7 +415,6 @@ defmodule LLMAgent.AgentLifecycleTest do
       LLMAgent.Memory.ETS.delete(name, :history)
 
       {:ok, pid2} = LLMAgent.start_link(name: name)
-
       on_exit(fn ->
         if Process.alive?(pid2), do: GenServer.stop({:global, name})
       end)
@@ -577,7 +568,6 @@ defmodule LLMAgent.AgentLifecycleTest do
 
       assert {:error, :no_match} =
                LLMAgent.TupleSpace.in_nowait({:agent_result, :root_complete, :_})
-
       assert Process.alive?(pid)
     end
   end
@@ -611,9 +601,7 @@ defmodule LLMAgent.AgentLifecycleTest do
       Process.sleep(80)
 
       assert {:ok, _} = LLMAgent.TupleSpace.in_nowait({:agent_result, :child_normal, :_})
-
-      assert {:error, :no_match} =
-               LLMAgent.TupleSpace.in_nowait({:agent_error, :child_normal, :_})
+      assert {:error, :no_match} = LLMAgent.TupleSpace.in_nowait({:agent_error, :child_normal, :_})
     end
 
     test "root agent abnormal exit does not write {:agent_error, ...}" do

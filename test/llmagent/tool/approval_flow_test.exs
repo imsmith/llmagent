@@ -31,12 +31,7 @@ defmodule LLMAgent.Tool.ApprovalFlowTest do
         constraint: %{idempotency: %{"do" => :non_idempotent}, blast_radius: %{"do" => :local}},
         affordance: %{declared: [], learned: [], open: false},
         fidelity: :authoritative,
-        provenance: %{
-          source: "test",
-          produced_at: DateTime.utc_now(),
-          based_on: [],
-          signature: nil
-        },
+        provenance: %{source: "test", produced_at: DateTime.utc_now(), based_on: [], signature: nil},
         lease: :permanent,
         meta: %{}
       })
@@ -71,9 +66,7 @@ defmodule LLMAgent.Tool.ApprovalFlowTest do
       Task.start(fn ->
         result =
           Dispatcher.act("function.appr", "do", %{"k" => "v"}, nil,
-            policy: policy,
-            approval_timeout: 1_000
-          )
+            policy: policy, approval_timeout: 1_000)
 
         send(caller, {:dispatch_result, result})
       end)
@@ -96,7 +89,8 @@ defmodule LLMAgent.Tool.ApprovalFlowTest do
 
       Task.start(fn ->
         result =
-          Dispatcher.act("function.appr", "do", %{}, nil, policy: policy, approval_timeout: 1_000)
+          Dispatcher.act("function.appr", "do", %{}, nil,
+            policy: policy, approval_timeout: 1_000)
 
         send(caller, {:dispatch_result, result})
       end)
@@ -116,9 +110,7 @@ defmodule LLMAgent.Tool.ApprovalFlowTest do
 
       assert {:error, :forbidden, :approval_timeout} =
                Dispatcher.act("function.appr", "do", %{}, nil,
-                 policy: policy,
-                 approval_timeout: 50
-               )
+                 policy: policy, approval_timeout: 50)
     end
   end
 

@@ -44,41 +44,34 @@ defmodule LLMAgent.Tools.DBus do
       binding: {:module, __MODULE__},
       operational: %{
         actions: %{
-          "list" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "list"       => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
           "introspect" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
-          "call" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
+          "call"       => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
         }
       },
       constraint: %{
         idempotency: %{
-          "list" => :idempotent,
+          "list"       => :idempotent,
           "introspect" => :idempotent,
-          "call" => :non_idempotent
+          "call"       => :non_idempotent
         },
         blast_radius: %{
-          "list" => :system,
+          "list"       => :system,
           "introspect" => :system,
-          "call" => :system
+          "call"       => :system
         }
       },
       affordance: %{
-        declared: [
-          %{
-            intent: "interact with services over D-Bus",
-            suits: "Linux desktop and system service inspection",
-            avoid_when: "the host has no DBus daemon running"
-          }
-        ],
+        declared: [%{
+          intent: "interact with services over D-Bus",
+          suits: "Linux desktop and system service inspection",
+          avoid_when: "the host has no DBus daemon running"
+        }],
         learned: [],
         open: false
       },
       fidelity: :authoritative,
-      provenance: %{
-        source: "llmagent.builtin",
-        produced_at: ~U[2026-05-18 00:00:00Z],
-        based_on: [],
-        signature: nil
-      },
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
       lease: :permanent,
       meta: %{}
     })
@@ -130,14 +123,8 @@ defmodule LLMAgent.Tools.DBus do
       {out, 0} ->
         services = parse_busctl_list(out)
         {:ok, %{output: services, metadata: %{action: "list", count: length(services)}}}
-
       {out, code} ->
-        {:error,
-         ErrorStruct.new(
-           "command_failed",
-           "busctl",
-           "busctl list failed (exit #{code}): #{String.trim(out)}"
-         )}
+        {:error, ErrorStruct.new("command_failed", "busctl", "busctl list failed (exit #{code}): #{String.trim(out)}")}
     end
   end
 
@@ -151,12 +138,7 @@ defmodule LLMAgent.Tools.DBus do
         "interface" => iface,
         "method" => method
       }) do
-    run_busctl(["call", svc, path, iface, method], %{
-      service: svc,
-      path: path,
-      interface: iface,
-      method: method
-    })
+    run_busctl(["call", svc, path, iface, method], %{service: svc, path: path, interface: iface, method: method})
   end
 
   def perform(_, _),
@@ -164,16 +146,8 @@ defmodule LLMAgent.Tools.DBus do
 
   defp run_busctl(args, metadata) do
     case System.cmd("busctl", args, stderr_to_stdout: true) do
-      {out, 0} ->
-        {:ok, %{output: String.trim(out), metadata: metadata}}
-
-      {out, code} ->
-        {:error,
-         ErrorStruct.new(
-           "command_failed",
-           "busctl",
-           "busctl failed (exit #{code}): #{String.trim(out)}"
-         )}
+      {out, 0} -> {:ok, %{output: String.trim(out), metadata: metadata}}
+      {out, code} -> {:error, ErrorStruct.new("command_failed", "busctl", "busctl failed (exit #{code}): #{String.trim(out)}")}
     end
   end
 
@@ -184,7 +158,6 @@ defmodule LLMAgent.Tools.DBus do
       [_header | data_lines] ->
         Enum.map(data_lines, fn line ->
           parts = String.split(line, ~r/\s+/, trim: true)
-
           case parts do
             [name | rest] -> %{name: name, details: Enum.join(rest, " ")}
             _ -> nil
@@ -192,8 +165,7 @@ defmodule LLMAgent.Tools.DBus do
         end)
         |> Enum.reject(&is_nil/1)
 
-      _ ->
-        []
+      _ -> []
     end
   end
 end

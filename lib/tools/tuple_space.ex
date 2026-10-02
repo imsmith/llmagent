@@ -24,35 +24,35 @@ defmodule LLMAgent.Tools.TupleSpace do
       binding: {:module, __MODULE__},
       operational: %{
         actions: %{
-          "read" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
-          "read_nowait" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
-          "list_spaces" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
-          "write" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
-          "take" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
-          "take_nowait" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
-          "create_space" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "read"          => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "read_nowait"   => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "list_spaces"   => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "write"         => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "take"          => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "take_nowait"   => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "create_space"  => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
           "destroy_space" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
         }
       },
       constraint: %{
         idempotency: %{
-          "read" => :idempotent,
-          "read_nowait" => :idempotent,
-          "list_spaces" => :idempotent,
-          "write" => :non_idempotent,
-          "take" => :non_idempotent,
-          "take_nowait" => :non_idempotent,
-          "create_space" => :non_idempotent,
+          "read"          => :idempotent,
+          "read_nowait"   => :idempotent,
+          "list_spaces"   => :idempotent,
+          "write"         => :non_idempotent,
+          "take"          => :non_idempotent,
+          "take_nowait"   => :non_idempotent,
+          "create_space"  => :non_idempotent,
           "destroy_space" => :non_idempotent
         },
         blast_radius: %{
-          "read" => :local,
-          "read_nowait" => :local,
-          "list_spaces" => :local,
-          "write" => :local,
-          "take" => :local,
-          "take_nowait" => :local,
-          "create_space" => :local,
+          "read"          => :local,
+          "read_nowait"   => :local,
+          "list_spaces"   => :local,
+          "write"         => :local,
+          "take"          => :local,
+          "take_nowait"   => :local,
+          "create_space"  => :local,
           "destroy_space" => :local
         }
       },
@@ -61,7 +61,8 @@ defmodule LLMAgent.Tools.TupleSpace do
           %{
             intent: "Linda-style coordination via shared tuples",
             suits: "loosely-coupled multi-agent message passing",
-            avoid_when: "you need ordered delivery or persistent state — use a real queue/db"
+            avoid_when:
+              "you need ordered delivery or persistent state — use a real queue/db"
           }
         ],
         learned: [],

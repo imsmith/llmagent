@@ -178,9 +178,7 @@ defmodule LLMAgent.Discovery.Wire do
   defp normalise_map(other), do: other
 
   @spec normalise_value(term()) :: term()
-  defp normalise_value(%EDN.Vector{} = arr),
-    do: arr |> Enum.to_list() |> Enum.map(&normalise_value/1)
-
+  defp normalise_value(%EDN.Vector{} = arr), do: arr |> Enum.to_list() |> Enum.map(&normalise_value/1)
   defp normalise_value(m) when is_map(m), do: normalise_map(m)
   # EDN lists decode to plain lists; their elements still need walking.
   defp normalise_value(l) when is_list(l), do: Enum.map(l, &normalise_value/1)

@@ -31,12 +31,7 @@ defmodule LLMAgent.Tool.AdapterOptsTest do
       constraint: %{idempotency: %{}, blast_radius: %{}},
       affordance: %{declared: [], learned: [], open: false},
       fidelity: :authoritative,
-      provenance: %{
-        source: "test",
-        produced_at: ~U[2026-08-05 00:00:00Z],
-        based_on: [],
-        signature: nil
-      },
+      provenance: %{source: "test", produced_at: ~U[2026-08-05 00:00:00Z], based_on: [], signature: nil},
       lease: :permanent
     })
   end

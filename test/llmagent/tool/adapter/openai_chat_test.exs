@@ -14,18 +14,16 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatTest do
     Bypass.expect_once(bypass, "POST", "/chat/completions", fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
       assert body =~ "stub-model"
-
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(200, ~s({"choices":[{"message":{"content":"hello back"}}]}))
     end)
 
     payload = %{api_host: host, model: "stub-model"}
-    args = %{messages: [%{"role" => "user", "content" => "hi"}]}
+    args    = %{messages: [%{"role" => "user", "content" => "hi"}]}
 
     assert {:ok, "hello back", %{model: "stub-model", latency_ms: latency}} =
              OpenAIChat.generate(payload, "chat", args, [])
-
     assert is_integer(latency) and latency >= 0
   end
 
@@ -35,7 +33,7 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatTest do
     end)
 
     payload = %{api_host: host, model: "stub-model"}
-    args = %{messages: [%{"role" => "user", "content" => "hi"}]}
+    args    = %{messages: [%{"role" => "user", "content" => "hi"}]}
 
     assert {:error, {:http_error, 500, _}} =
              OpenAIChat.generate(payload, "chat", args, [])
@@ -43,7 +41,6 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatTest do
 
   test "rejects unknown actions" do
     payload = %{api_host: "http://localhost:1", model: "stub"}
-
     assert {:error, :unknown_action} =
              OpenAIChat.generate(payload, "speak", %{}, [])
   end

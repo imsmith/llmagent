@@ -3,7 +3,6 @@ defmodule LLMAgentTest do
   use ExUnit.Case, async: false
 
   alias LLMAgent.EventLog
-
   setup do
     EventLog.clear()
     LLMAgent.DurableLog.clear()
@@ -12,11 +11,9 @@ defmodule LLMAgentTest do
 
   defp start_agent(name, opts \\ []) do
     {:ok, pid} = LLMAgent.start_link([{:name, name} | opts])
-
     on_exit(fn ->
       if Process.alive?(pid), do: GenServer.stop({:global, name})
     end)
-
     pid
   end
 
@@ -115,12 +112,11 @@ defmodule LLMAgentTest do
     test "tool call response appends assistant + function messages" do
       pid = start_agent(:history_tool)
 
-      tool_json =
-        Jason.encode!(%{
-          "tool" => "bash",
-          "action" => "exec",
-          "args" => %{"command" => "echo hi"}
-        })
+      tool_json = Jason.encode!(%{
+        "tool" => "bash",
+        "action" => "exec",
+        "args" => %{"command" => "echo hi"}
+      })
 
       simulate_llm_response(pid, tool_json)
       state = get_state(:history_tool)
@@ -142,12 +138,11 @@ defmodule LLMAgentTest do
     test "dispatches bash tool correctly" do
       pid = start_agent(:dispatch_bash)
 
-      tool_json =
-        Jason.encode!(%{
-          "tool" => "bash",
-          "action" => "exec",
-          "args" => %{"command" => "echo dispatched"}
-        })
+      tool_json = Jason.encode!(%{
+        "tool" => "bash",
+        "action" => "exec",
+        "args" => %{"command" => "echo dispatched"}
+      })
 
       simulate_llm_response(pid, tool_json)
       state = get_state(:dispatch_bash)
@@ -180,12 +175,11 @@ defmodule LLMAgentTest do
     test "dispatches crypto tool correctly" do
       pid = start_agent(:dispatch_crypto)
 
-      tool_json =
-        Jason.encode!(%{
-          "tool" => "crypto",
-          "action" => "sha256",
-          "args" => %{"data" => "test"}
-        })
+      tool_json = Jason.encode!(%{
+        "tool" => "crypto",
+        "action" => "sha256",
+        "args" => %{"data" => "test"}
+      })
 
       simulate_llm_response(pid, tool_json)
       state = get_state(:dispatch_crypto)
@@ -199,12 +193,11 @@ defmodule LLMAgentTest do
     test "invalid tool returns error in function message" do
       pid = start_agent(:dispatch_invalid)
 
-      tool_json =
-        Jason.encode!(%{
-          "tool" => "nonexistent_tool",
-          "action" => "do_thing",
-          "args" => %{}
-        })
+      tool_json = Jason.encode!(%{
+        "tool" => "nonexistent_tool",
+        "action" => "do_thing",
+        "args" => %{}
+      })
 
       simulate_llm_response(pid, tool_json)
       state = get_state(:dispatch_invalid)
@@ -217,12 +210,11 @@ defmodule LLMAgentTest do
     test "tool failure returns error message for LLM retry" do
       pid = start_agent(:dispatch_fail)
 
-      tool_json =
-        Jason.encode!(%{
-          "tool" => "bash",
-          "action" => "exec",
-          "args" => %{"command" => "exit 1"}
-        })
+      tool_json = Jason.encode!(%{
+        "tool" => "bash",
+        "action" => "exec",
+        "args" => %{"command" => "exit 1"}
+      })
 
       simulate_llm_response(pid, tool_json)
       state = get_state(:dispatch_fail)
@@ -285,12 +277,11 @@ defmodule LLMAgentTest do
     test "tool invocation produces events in EventLog" do
       pid = start_agent(:events_tool)
 
-      tool_json =
-        Jason.encode!(%{
-          "tool" => "bash",
-          "action" => "exec",
-          "args" => %{"command" => "echo event_test"}
-        })
+      tool_json = Jason.encode!(%{
+        "tool" => "bash",
+        "action" => "exec",
+        "args" => %{"command" => "echo event_test"}
+      })
 
       simulate_llm_response(pid, tool_json)
 
@@ -328,12 +319,11 @@ defmodule LLMAgentTest do
     test "failed tool emits invocation event with error result" do
       pid = start_agent(:events_fail)
 
-      tool_json =
-        Jason.encode!(%{
-          "tool" => "bash",
-          "action" => "exec",
-          "args" => %{"command" => "exit 99"}
-        })
+      tool_json = Jason.encode!(%{
+        "tool" => "bash",
+        "action" => "exec",
+        "args" => %{"command" => "exit 99"}
+      })
 
       simulate_llm_response(pid, tool_json)
 

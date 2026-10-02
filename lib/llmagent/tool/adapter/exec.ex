@@ -246,7 +246,6 @@ defmodule LLMAgent.Tool.Adapter.Exec do
 
       {^port, {:exit_status, status}} ->
         output = finish(acc)
-
         meta = %{
           status: status,
           truncated: size > @output_cap,

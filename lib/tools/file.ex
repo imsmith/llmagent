@@ -29,37 +29,26 @@ defmodule LLMAgent.Tools.File do
       binding: {:module, __MODULE__},
       operational: %{
         actions: %{
-          "read" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
-          "write" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "read"   => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "write"  => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
           "delete" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
         }
       },
       constraint: %{
-        idempotency: %{
-          "read" => :idempotent,
-          "write" => :non_idempotent,
-          "delete" => :non_idempotent
-        },
+        idempotency: %{"read" => :idempotent, "write" => :non_idempotent, "delete" => :non_idempotent},
         blast_radius: %{"read" => :local, "write" => :local, "delete" => :local}
       },
       affordance: %{
-        declared: [
-          %{
-            intent: "read/write/delete files",
-            suits: "any file IO",
-            avoid_when: "the path is on a remote mount with high latency"
-          }
-        ],
+        declared: [%{
+          intent: "read/write/delete files",
+          suits: "any file IO",
+          avoid_when: "the path is on a remote mount with high latency"
+        }],
         learned: [],
         open: false
       },
       fidelity: :authoritative,
-      provenance: %{
-        source: "llmagent.builtin",
-        produced_at: ~U[2026-05-18 00:00:00Z],
-        based_on: [],
-        signature: nil
-      },
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
       lease: :permanent,
       meta: %{}
     })

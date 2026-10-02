@@ -17,7 +17,6 @@ defmodule LLMAgent.MCP.Transport.HTTP do
           headers: Keyword.get(opts, :headers, []),
           plug: Keyword.get(opts, :plug)
         }
-
         {:ok, state}
 
       :error ->

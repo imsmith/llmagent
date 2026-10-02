@@ -23,7 +23,6 @@ defmodule LLMAgent.Tool.PolicyTest do
   describe "decide/4 — allow/deny" do
     test "deny-by-default: empty allow forbids" do
       policy = %Policy{}
-
       assert {:error, :forbidden, :not_allowed} =
                Policy.decide(policy, ad(), :compute, "anything")
     end
@@ -32,7 +31,6 @@ defmodule LLMAgent.Tool.PolicyTest do
       policy = %Policy{
         allow: [%{coordinate: "function.example", kinds: :any, actions: :any}]
       }
-
       assert :ok = Policy.decide(policy, ad(), :compute, "anything")
     end
 
@@ -44,9 +42,8 @@ defmodule LLMAgent.Tool.PolicyTest do
     test "explicit deny overrides allow" do
       policy = %Policy{
         allow: ["function.*"],
-        deny: [%{coordinate: "function.example", kinds: [:compute], actions: :any}]
+        deny:  [%{coordinate: "function.example", kinds: [:compute], actions: :any}]
       }
-
       assert {:error, :forbidden, :explicit_deny} =
                Policy.decide(policy, ad(), :compute, "x")
     end
@@ -55,7 +52,6 @@ defmodule LLMAgent.Tool.PolicyTest do
       policy = %Policy{
         allow: [%{coordinate: "function.example", kinds: [:query], actions: :any}]
       }
-
       assert {:error, :forbidden, :not_allowed} =
                Policy.decide(policy, ad(), :compute, "x")
     end
@@ -64,9 +60,7 @@ defmodule LLMAgent.Tool.PolicyTest do
       policy = %Policy{
         allow: [%{coordinate: "function.example", kinds: :any, actions: ["only-this"]}]
       }
-
       assert :ok = Policy.decide(policy, ad(), :compute, "only-this")
-
       assert {:error, :forbidden, :not_allowed} =
                Policy.decide(policy, ad(), :compute, "other")
     end
@@ -78,7 +72,6 @@ defmodule LLMAgent.Tool.PolicyTest do
         allow: ["function.example"],
         fidelity_min: :authoritative
       }
-
       assert {:error, :forbidden, :fidelity_too_low} =
                Policy.decide(policy, ad(%{fidelity: :trained}), :compute, "x")
     end
@@ -88,7 +81,6 @@ defmodule LLMAgent.Tool.PolicyTest do
         allow: ["function.example"],
         fidelity_min: :trained
       }
-
       assert :ok = Policy.decide(policy, ad(%{fidelity: :trained}), :compute, "x")
       assert :ok = Policy.decide(policy, ad(%{fidelity: :authoritative}), :compute, "x")
     end
@@ -100,7 +92,6 @@ defmodule LLMAgent.Tool.PolicyTest do
         allow: ["function.example"],
         provenance: %{source: ["trusted"], signed: false}
       }
-
       assert {:error, :forbidden, :provenance} =
                Policy.decide(policy, ad(), :compute, "x")
     end
@@ -110,7 +101,6 @@ defmodule LLMAgent.Tool.PolicyTest do
         allow: ["function.example"],
         provenance: %{source: ["test"], signed: false}
       }
-
       assert :ok = Policy.decide(policy, ad(), :compute, "x")
     end
 
@@ -119,7 +109,6 @@ defmodule LLMAgent.Tool.PolicyTest do
         allow: ["function.example"],
         provenance: %{source: :any, signed: true}
       }
-
       assert {:error, :forbidden, :unsigned} =
                Policy.decide(policy, ad(), :compute, "x")
     end
@@ -147,13 +136,10 @@ defmodule LLMAgent.Tool.PolicyTest do
 
     test "never broadens the allow set" do
       narrow = %Policy{allow: [%{coordinate: "function.specific", kinds: :any, actions: :any}]}
-
-      broad = %Policy{
-        allow: [
-          %{coordinate: "function.*", kinds: :any, actions: :any},
-          %{coordinate: "resource.*", kinds: :any, actions: :any}
-        ]
-      }
+      broad  = %Policy{allow: [
+                 %{coordinate: "function.*",  kinds: :any, actions: :any},
+                 %{coordinate: "resource.*",  kinds: :any, actions: :any}
+               ]}
 
       # narrow ∩ broad — must keep the narrower set, not adopt the broader one
       merged_a = Policy.intersect(narrow, broad)

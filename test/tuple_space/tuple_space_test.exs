@@ -55,7 +55,6 @@ defmodule LLMAgent.TupleSpaceTest do
         Process.sleep(50)
         TupleSpace.out({:delayed, "arrived"})
       end)
-
       assert {:ok, {:delayed, "arrived"}} = TupleSpace.in_({:delayed, :_}, 1_000)
     end
 
@@ -64,7 +63,6 @@ defmodule LLMAgent.TupleSpaceTest do
         Process.sleep(50)
         TupleSpace.out({:delayed, "peek"})
       end)
-
       assert {:ok, {:delayed, "peek"}} = TupleSpace.rd({:delayed, :_}, 1_000)
     end
   end
@@ -72,7 +70,6 @@ defmodule LLMAgent.TupleSpaceTest do
   describe "Linda operations on named space" do
     setup do
       {:ok, _} = TupleSpace.start_space(:named_test)
-
       on_exit(fn ->
         try do
           TupleSpace.stop_space(:named_test)
@@ -80,7 +77,6 @@ defmodule LLMAgent.TupleSpaceTest do
           _, _ -> :ok
         end
       end)
-
       :ok
     end
 
@@ -94,7 +90,6 @@ defmodule LLMAgent.TupleSpaceTest do
         Process.sleep(50)
         TupleSpace.out(:named_test, {:result, 42})
       end)
-
       assert {:ok, {:result, 42}} = TupleSpace.in_(:named_test, {:result, :_}, 1_000)
     end
   end

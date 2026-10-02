@@ -7,11 +7,9 @@ defmodule LLMAgent.TupleSpace.SpaceTest do
   setup do
     name = :"test_space_#{System.unique_integer([:positive])}"
     {:ok, pid} = Space.start_link(name: name)
-
     on_exit(fn ->
       if Process.alive?(pid), do: GenServer.stop(pid)
     end)
-
     %{pid: pid, name: name}
   end
 
@@ -88,7 +86,6 @@ defmodule LLMAgent.TupleSpace.SpaceTest do
         Process.sleep(50)
         Space.out(pid, {:task, :pending, "delayed"})
       end)
-
       assert {:ok, {:task, :pending, "delayed"}} = Space.in_(pid, {:task, :pending, :_}, 1_000)
     end
 
@@ -112,7 +109,6 @@ defmodule LLMAgent.TupleSpace.SpaceTest do
         Process.sleep(50)
         Space.out(pid, {:task, :pending, "take_me"})
       end)
-
       {:ok, _} = Space.in_(pid, {:task, :pending, :_}, 1_000)
       assert {:error, :no_match} = Space.in_nowait(pid, {:task, :pending, :_})
     end
@@ -124,7 +120,6 @@ defmodule LLMAgent.TupleSpace.SpaceTest do
         Process.sleep(50)
         Space.out(pid, {:result, 42})
       end)
-
       assert {:ok, {:result, 42}} = Space.rd(pid, {:result, :_}, 1_000)
       assert {:ok, {:result, 42}} = Space.rd_nowait(pid, {:result, :_})
     end
@@ -150,11 +145,9 @@ defmodule LLMAgent.TupleSpace.SpaceTest do
 
   describe "waiter cleanup on caller death" do
     test "removes waiter when caller dies", %{pid: pid} do
-      {caller, ref} =
-        spawn_monitor(fn ->
-          Space.in_(pid, {:never, :_}, 60_000)
-        end)
-
+      {caller, ref} = spawn_monitor(fn ->
+        Space.in_(pid, {:never, :_}, 60_000)
+      end)
       Process.sleep(20)
       assert Space.info(pid).waiters == 1
 

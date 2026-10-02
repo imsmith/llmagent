@@ -42,11 +42,7 @@ defmodule LLMAgent.Tool.Policy do
   `%{coordinate: pattern, kinds: :any, actions: :any}`) or a map with
   optional `:kinds` and `:actions` narrowing.
   """
-  @type policy_rule :: %{
-          coordinate: String.t(),
-          kinds: :any | [atom()],
-          actions: :any | [String.t()]
-        }
+  @type policy_rule :: %{coordinate: String.t(), kinds: :any | [atom()], actions: :any | [String.t()]}
 
   @typedoc """
   Per-agent dispatch policy.
@@ -245,9 +241,7 @@ defmodule LLMAgent.Tool.Policy do
   defp provenance_source_ok?(_ad, %__MODULE__{provenance: %{source: :any}}), do: true
 
   @doc false
-  defp provenance_source_ok?(%ToolAd{provenance: %{source: src}}, %__MODULE__{
-         provenance: %{source: list}
-       })
+  defp provenance_source_ok?(%ToolAd{provenance: %{source: src}}, %__MODULE__{provenance: %{source: list}})
        when is_list(list),
        do: src in list
 
@@ -258,10 +252,8 @@ defmodule LLMAgent.Tool.Policy do
   defp provenance_signed_ok?(_ad, %__MODULE__{provenance: %{signed: false}}), do: true
 
   @doc false
-  defp provenance_signed_ok?(%ToolAd{provenance: %{signature: nil}}, %__MODULE__{
-         provenance: %{signed: true}
-       }),
-       do: false
+  defp provenance_signed_ok?(%ToolAd{provenance: %{signature: nil}}, %__MODULE__{provenance: %{signed: true}}),
+    do: false
 
   @doc false
   defp provenance_signed_ok?(_ad, _policy), do: true

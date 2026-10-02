@@ -57,29 +57,20 @@ defmodule LLMAgent.MCP.Connection do
     with {:ok, transport_state} <- transport_mod.start(transport_opts),
          {:ok, init_result, transport_state} <- do_initialize(transport_mod, transport_state),
          {:ok, tools, transport_state} <- do_discover_tools(transport_mod, transport_state) do
+
       tool_atoms = register_tools(name, tools)
 
-      Events.emit(
-        :mcp_connected,
-        "mcp.connected",
-        %{
-          server: name,
-          protocol_version: init_result["protocolVersion"],
-          capabilities: init_result["capabilities"]
-        },
-        __MODULE__
-      )
+      Events.emit(:mcp_connected, "mcp.connected", %{
+        server: name,
+        protocol_version: init_result["protocolVersion"],
+        capabilities: init_result["capabilities"]
+      }, __MODULE__)
 
-      Events.emit(
-        :mcp_tools_discovered,
-        "mcp.tools_discovered",
-        %{
-          server: name,
-          tool_count: length(tool_atoms),
-          tools: tool_atoms
-        },
-        __MODULE__
-      )
+      Events.emit(:mcp_tools_discovered, "mcp.tools_discovered", %{
+        server: name,
+        tool_count: length(tool_atoms),
+        tools: tool_atoms
+      }, __MODULE__)
 
       state = %{
         name: name,
@@ -128,7 +119,6 @@ defmodule LLMAgent.MCP.Connection do
       server_capabilities: state.server_capabilities,
       tools: state.tools
     }
-
     {:reply, info, state}
   end
 
@@ -137,14 +127,9 @@ defmodule LLMAgent.MCP.Connection do
     unregister_tools(state.name, state.tools)
     state.transport.close(state.transport_state)
 
-    Events.emit(
-      :mcp_disconnected,
-      "mcp.disconnected",
-      %{
-        server: state.name
-      },
-      __MODULE__
-    )
+    Events.emit(:mcp_disconnected, "mcp.disconnected", %{
+      server: state.name
+    }, __MODULE__)
 
     :ok
   end
@@ -183,13 +168,7 @@ defmodule LLMAgent.MCP.Connection do
     entries =
       Enum.map(tools, fn tool ->
         atom = tool_atom(server_name, tool["name"])
-
-        entry = %{
-          connection: server_name,
-          tool: tool["name"],
-          description: build_description(tool)
-        }
-
+        entry = %{connection: server_name, tool: tool["name"], description: build_description(tool)}
         {atom, entry}
       end)
 

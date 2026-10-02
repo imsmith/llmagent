@@ -15,7 +15,6 @@ defmodule LLMAgent.MCP.Transport.Mock do
       "capabilities" => %{"tools" => %{}},
       "serverInfo" => %{"name" => "mock", "version" => "1.0"}
     }
-
     {{:ok, result}, state}
   end
 
@@ -28,7 +27,6 @@ defmodule LLMAgent.MCP.Transport.Mock do
     result = %{
       "content" => [%{"type" => "text", "text" => "result for #{params["name"]}"}]
     }
-
     state = %{state | calls: state.calls ++ [params]}
     {{:ok, result}, state}
   end

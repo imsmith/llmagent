@@ -58,7 +58,7 @@ defmodule LLMAgent.Tools.Web do
       binding: {:module, __MODULE__},
       operational: %{
         actions: %{
-          "get" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
+          "get"  => %{inputs: %{}, outputs: %{}, pre: nil, post: nil},
           "post" => %{inputs: %{}, outputs: %{}, pre: nil, post: nil}
         }
       },
@@ -67,23 +67,16 @@ defmodule LLMAgent.Tools.Web do
         blast_radius: %{"get" => :external, "post" => :external}
       },
       affordance: %{
-        declared: [
-          %{
-            intent: "HTTP requests against arbitrary URLs",
-            suits: "fetching/posting JSON/text payloads",
-            avoid_when: "the target is on a local socket — use a more specific tool"
-          }
-        ],
+        declared: [%{
+          intent: "HTTP requests against arbitrary URLs",
+          suits: "fetching/posting JSON/text payloads",
+          avoid_when: "the target is on a local socket — use a more specific tool"
+        }],
         learned: [],
         open: false
       },
       fidelity: :authoritative,
-      provenance: %{
-        source: "llmagent.builtin",
-        produced_at: ~U[2026-05-18 00:00:00Z],
-        based_on: [],
-        signature: nil
-      },
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
       lease: :permanent,
       meta: %{}
     })
@@ -133,42 +126,29 @@ defmodule LLMAgent.Tools.Web do
   @impl true
   def perform("get", %{"url" => url} = args) do
     opts = base_opts(url, args)
-
     Req.get(opts)
     |> normalize_response(url)
   rescue
-    e in Mint.TransportError ->
-      {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
-
-    e in Mint.HTTPError ->
-      {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
-
-    e in ArgumentError ->
-      {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in Mint.TransportError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in Mint.HTTPError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in ArgumentError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
   end
 
   def perform("post", %{"url" => url} = args) do
     body = Map.get(args, "body", "")
     encoded_body = if is_map(body), do: Jason.encode!(body), else: body
     opts = base_opts(url, args) |> Keyword.put(:body, encoded_body)
-
     Req.post(opts)
     |> normalize_response(url)
   rescue
-    e in Mint.TransportError ->
-      {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
-
-    e in Mint.HTTPError ->
-      {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
-
-    e in Jason.EncodeError ->
-      {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
-
-    e in ArgumentError ->
-      {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in Mint.TransportError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in Mint.HTTPError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in Jason.EncodeError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
+    e in ArgumentError -> {:error, ErrorStruct.new("http_error", "url", Exception.message(e))}
   end
 
-  def perform(_, _), do: {:error, ErrorStruct.new("unknown_command", nil, "Unrecognized action.")}
+  def perform(_, _), do:
+    {:error, ErrorStruct.new("unknown_command", nil, "Unrecognized action.")}
 
   defp base_opts(url, args) do
     []

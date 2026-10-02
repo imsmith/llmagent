@@ -60,20 +60,12 @@ defmodule LLMAgent.Tools.Net do
     case System.cmd("ip", ["-j", "addr"], stderr_to_stdout: true) do
       {json, 0} ->
         case Jason.decode(json) do
-          {:ok, data} ->
-            {:ok, %{output: data, metadata: %{action: "list_interfaces"}}}
-
-          {:error, _} ->
-            {:ok, %{output: json, metadata: %{action: "list_interfaces", format: "raw"}}}
+          {:ok, data} -> {:ok, %{output: data, metadata: %{action: "list_interfaces"}}}
+          {:error, _} -> {:ok, %{output: json, metadata: %{action: "list_interfaces", format: "raw"}}}
         end
 
       {err, code} ->
-        {:error,
-         ErrorStruct.new(
-           "command_failed",
-           "ip",
-           "ip addr failed (exit #{code}): #{String.trim(err)}"
-         )}
+        {:error, ErrorStruct.new("command_failed", "ip", "ip addr failed (exit #{code}): #{String.trim(err)}")}
     end
   end
 
@@ -81,19 +73,9 @@ defmodule LLMAgent.Tools.Net do
     case System.cmd("ping", ["-c", "1", host], stderr_to_stdout: true) do
       {out, 0} ->
         rtt = parse_ping_rtt(out)
-
-        {:ok,
-         %{
-           output: %{reachable: true, rtt_ms: rtt, raw: String.trim(out)},
-           metadata: %{host: host, reachable: true}
-         }}
-
+        {:ok, %{output: %{reachable: true, rtt_ms: rtt, raw: String.trim(out)}, metadata: %{host: host, reachable: true}}}
       {out, _} ->
-        {:ok,
-         %{
-           output: %{reachable: false, rtt_ms: nil, raw: String.trim(out)},
-           metadata: %{host: host, reachable: false}
-         }}
+        {:ok, %{output: %{reachable: false, rtt_ms: nil, raw: String.trim(out)}, metadata: %{host: host, reachable: false}}}
     end
   end
 
@@ -104,12 +86,7 @@ defmodule LLMAgent.Tools.Net do
         {:ok, %{output: addrs, metadata: %{host: host}}}
 
       {err, code} ->
-        {:error,
-         ErrorStruct.new(
-           "command_failed",
-           "host",
-           "dig failed (exit #{code}): #{String.trim(err)}"
-         )}
+        {:error, ErrorStruct.new("command_failed", "host", "dig failed (exit #{code}): #{String.trim(err)}")}
     end
   end
 
@@ -136,22 +113,13 @@ defmodule LLMAgent.Tools.Net do
       },
       affordance: %{
         declared: [
-          %{
-            intent: "inspect local network state",
-            suits: "diagnostic and discovery flows",
-            avoid_when: nil
-          }
+          %{intent: "inspect local network state", suits: "diagnostic and discovery flows", avoid_when: nil}
         ],
         learned: [],
         open: false
       },
       fidelity: :authoritative,
-      provenance: %{
-        source: "llmagent.builtin",
-        produced_at: ~U[2026-05-18 00:00:00Z],
-        based_on: [],
-        signature: nil
-      },
+      provenance: %{source: "llmagent.builtin", produced_at: ~U[2026-05-18 00:00:00Z], based_on: [], signature: nil},
       lease: :permanent,
       meta: %{}
     })
@@ -172,9 +140,7 @@ defmodule LLMAgent.Tools.Net do
           {f, _} -> f
           :error -> nil
         end
-
-      _ ->
-        nil
+      _ -> nil
     end
   end
 end

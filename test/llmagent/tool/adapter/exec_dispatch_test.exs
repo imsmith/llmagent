@@ -28,12 +28,7 @@ defmodule LLMAgent.Tool.Adapter.ExecDispatchTest do
       constraint: %{idempotency: %{}, blast_radius: %{scope: :none}},
       affordance: %{declared: [], learned: [], open: true},
       fidelity: :speculative,
-      provenance: %{
-        source: "test",
-        produced_at: ~U[2026-08-05 00:00:00Z],
-        based_on: [],
-        signature: nil
-      },
+      provenance: %{source: "test", produced_at: ~U[2026-08-05 00:00:00Z], based_on: [], signature: nil},
       lease: :permanent,
       meta: %{extraction: :complete, language: "bash"}
     })

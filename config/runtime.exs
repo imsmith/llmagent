@@ -23,35 +23,26 @@ mdns_shims =
     []
   else
     [
-      %{
-        name: :avahi_llama,
+      %{name: :avahi_llama,
         command: System.find_executable("tclsh"),
         args: [Path.expand("priv/discovery/avahi-llama.tcl", File.cwd!())],
-        env: []
-      }
+        env: []}
     ]
   end
 
-config :LLMAgent,
-       :discovery_adapters,
-       mdns_shims ++
-         [
-           # Local executables in ~/bin, advertised as :speculative ads with leases.
-           # Static reading only — bin-watch.tcl never executes a watched tool. See
-           # the header of that script for why running them to interrogate them is
-           # unsafe for this population.
-           %{
-             name: :bin_watch,
-             command: System.find_executable("tclsh"),
-             args: [
-               Path.expand("priv/discovery/bin-watch.tcl", File.cwd!()),
-               "--dir",
-               Path.join(System.user_home!(), "bin"),
-               "--interval",
-               "60",
-               "--lease",
-               "180"
-             ],
-             env: []
-           }
-         ]
+config :LLMAgent, :discovery_adapters, mdns_shims ++ [
+
+    # Local executables in ~/bin, advertised as :speculative ads with leases.
+    # Static reading only — bin-watch.tcl never executes a watched tool. See
+    # the header of that script for why running them to interrogate them is
+    # unsafe for this population.
+    %{name: :bin_watch,
+      command: System.find_executable("tclsh"),
+      args: [
+        Path.expand("priv/discovery/bin-watch.tcl", File.cwd!()),
+        "--dir", Path.join(System.user_home!(), "bin"),
+        "--interval", "60",
+        "--lease", "180"
+      ],
+      env: []}
+]
