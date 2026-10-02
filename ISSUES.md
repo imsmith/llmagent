@@ -592,6 +592,19 @@ call still goes through `llm_client`/`api_host` rather than
 `Dispatcher.generate` against a discovered ad. The original symptom and
 consequence stand as written for that ad kind — this entry stays open.
 
+### Partial resolution — 2026-10-02
+
+A discovered `compute.llm.chat` ad is now dialable through
+`LLMAgent.Tool.Dispatcher.generate/4` with a `%{turn: %LLMAgent.Turn{}}`
+argument: streaming, tool calls, usage, under a `%Policy{}`.
+`scripts/hub_probe.exs` does exactly this against an mDNS-discovered ad, and
+`test/llmagent/tool/generate_turn_dispatch_test.exs` covers it with a fake
+performer.
+
+**Not resolved:** `LLMAgent`'s own agent loop is unchanged. It still calls
+`llm_client` with the `api_host` from its start opts and never consults a
+discovered ad. That part of the original symptom stands.
+
 ---
 
 ## Two of the seven canonical kinds are declared by nothing
