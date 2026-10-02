@@ -14,11 +14,23 @@ config :LLMAgent,
 # is not evaluated — agento declares its own :discovery_adapters and resolves
 # scripts via Application.app_dir(:LLMAgent, ...). Adding a shim here does not
 # turn it on there.
-config :LLMAgent, :discovery_adapters, [
-    %{name: :avahi_llama,
-      command: System.find_executable("tclsh"),
-      args: [Path.expand("priv/discovery/avahi-llama.tcl", File.cwd!())],
-      env: []},
+#
+# The mDNS shim is left out under test. It renews its ads for as long as it
+# runs, so the real network's hosts would reappear in a registry a test had
+# just emptied. Its own integration test starts it against a fake source.
+mdns_shims =
+  if config_env() == :test do
+    []
+  else
+    [
+      %{name: :avahi_llama,
+        command: System.find_executable("tclsh"),
+        args: [Path.expand("priv/discovery/avahi-llama.tcl", File.cwd!())],
+        env: []}
+    ]
+  end
+
+config :LLMAgent, :discovery_adapters, mdns_shims ++ [
 
     # Local executables in ~/bin, advertised as :speculative ads with leases.
     # Static reading only — bin-watch.tcl never executes a watched tool. See
