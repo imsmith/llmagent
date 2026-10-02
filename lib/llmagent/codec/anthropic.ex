@@ -61,13 +61,14 @@ defmodule LLMAgent.Codec.Anthropic do
   """
   @spec decode_request(wire()) :: {:ok, Turn.t()} | {:error, decode_error()}
   def decode_request(%{"messages" => messages} = wire) when is_list(messages) do
-    with {:ok, system} <- decode_content(wire["system"]),
+    with {:ok, model} <- decode_model(wire["model"]),
+         {:ok, system} <- decode_content(wire["system"]),
          {:ok, messages} <- map_ok(messages, &decode_message/1),
          {:ok, tools} <- map_ok(wire["tools"] || [], &decode_tool/1),
          {:ok, tool_choice} <- decode_tool_choice(wire["tool_choice"]) do
       {:ok,
        %Turn{
-         model: wire["model"],
+         model: model,
          system: system,
          messages: messages,
          tools: tools,
@@ -80,6 +81,9 @@ defmodule LLMAgent.Codec.Anthropic do
   end
 
   def decode_request(_wire), do: {:error, {:invalid, "messages must be a list"}}
+
+  defp decode_model(model) when is_binary(model) or is_nil(model), do: {:ok, model}
+  defp decode_model(_other), do: {:error, {:invalid, "model must be a string"}}
 
   defp decode_params(wire) do
     for {wire_key, key} <- [

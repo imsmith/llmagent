@@ -15,6 +15,7 @@ test-ex:
 # Discovery shims are Tcl and are tested with tcltest, not ExUnit.
 test-tcl:
 	tclsh test/tcl/bin_watch_test.tcl
+	tclsh test/tcl/avahi_llama_test.tcl
 
 release:
 	MIX_ENV=prod mix release llmagent

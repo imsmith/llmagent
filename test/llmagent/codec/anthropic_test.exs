@@ -171,6 +171,15 @@ defmodule LLMAgent.Codec.AnthropicTest do
       assert {:error, {:invalid, _}} = Anthropic.decode_request(wire)
     end
 
+    test "a model that is not a string is invalid", %{wire: wire} do
+      for bad <- [%{"a" => 1}, ["x"], 7, true] do
+        assert {:error, {:invalid, message}} = Anthropic.decode_request(Map.put(wire, "model", bad)), inspect(bad)
+        assert message =~ "model"
+      end
+
+      assert {:ok, %{model: nil}} = Anthropic.decode_request(Map.delete(wire, "model"))
+    end
+
     test "refuses messages that are missing or not a list", %{wire: wire} do
       assert {:error, {:invalid, _}} = Anthropic.decode_request(Map.delete(wire, "messages"))
       assert {:error, {:invalid, _}} = Anthropic.decode_request(Map.put(wire, "messages", "not-a-list"))

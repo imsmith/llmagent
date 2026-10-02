@@ -207,6 +207,24 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatStreamTest do
     end
   end
 
+  # A turn must go to the performer the ad names and nowhere else: the caller
+  # chose it under a policy, and a redirect would send the prompt past that.
+  test "a redirect is not followed", ctx do
+    elsewhere = Bypass.open()
+    Bypass.stub(elsewhere, "POST", "/chat/completions", fn _conn -> flunk("the redirect was followed") end)
+
+    Bypass.expect_once(ctx.bypass, "POST", "/chat/completions", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_header("location", "http://localhost:#{elsewhere.port}/chat/completions")
+      |> Plug.Conn.resp(307, "")
+    end)
+
+    assert {:error, {:http_error, 307, _}} =
+             OpenAIChat.generate(ctx.payload, "chat", %{turn: turn()}, into: collector())
+
+    assert received_events() == []
+  end
+
   test "a performer that is not listening is an error, not a raise", ctx do
     Bypass.down(ctx.bypass)
 
