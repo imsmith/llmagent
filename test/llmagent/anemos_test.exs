@@ -218,3 +218,50 @@ defmodule LLMAgent.AnemosTest do
              )
   end
 end
+
+defmodule LLMAgent.AnemosDescribeTest do
+  use ExUnit.Case, async: false
+
+  alias LLMAgent.{ToolAd, Tools.Discovery}
+
+  test "describe/1 answers from the ad, per name" do
+    Discovery.reset!()
+
+    :ok =
+      Discovery.register(
+        ToolAd.new(%{
+          id: "d.1",
+          coordinate: "function.test.describe",
+          kinds: [:compute],
+          binding: {:module, Enum},
+          operational: %{actions: %{"double" => %{}, "halve" => %{}}},
+          constraint: %{idempotency: %{"double" => :idempotent}, blast_radius: %{}},
+          affordance: %{
+            declared: [%{intent: "arithmetic on demand", suits: "tests", avoid_when: nil}],
+            learned: [],
+            open: false
+          },
+          fidelity: :authoritative,
+          provenance: %{
+            source: "test",
+            produced_at: DateTime.utc_now(),
+            based_on: [],
+            signature: nil
+          },
+          lease: :permanent
+        })
+      )
+
+    assert %{
+             look: "FUNCTION_TEST_DESCRIBE — function.test.describe: arithmetic on demand",
+             recon: %{
+               coordinate: "function.test.describe",
+               kinds: [:compute],
+               idempotency: %{"double" => :idempotent}
+             },
+             choices: %{verbs: ["double", "halve"]}
+           } = LLMAgent.Anemos.describe("FUNCTION_TEST_DESCRIBE")
+
+    assert %{look: "NOPE — no tool" <> _} = LLMAgent.Anemos.describe("NOPE")
+  end
+end
