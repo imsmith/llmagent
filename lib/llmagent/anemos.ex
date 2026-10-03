@@ -134,6 +134,42 @@ defmodule LLMAgent.Anemos do
 
   def handle_verb(_verb, _args, _context), do: {:error, :not_in_a_runtime}
 
+  @doc """
+  What `show`, `explain` and `list` say about a tool, per name: the ad's
+  declared intent as the look, its kinds and constraints as the recon, its
+  actions as the choices. Every runtime this module serves shares the
+  registry, so no runtime is needed to answer.
+  """
+  @impl Anemos.Runtime.Module
+  def describe(name) do
+    {:ok, ads} = Discovery.find_all(ToolQuery.new(%{coordinate: "*"}))
+
+    case Enum.find(ads, &(module_name(&1.coordinate) == name)) do
+      nil ->
+        %{look: "#{name} — no tool is advertising under that name now", recon: %{}, choices: %{}}
+
+      ad ->
+        intents = for %{intent: intent} <- Map.get(ad.affordance, :declared, []), do: intent
+        actions = ad.operational |> Map.get(:actions, %{}) |> Map.keys() |> Enum.sort()
+
+        %{
+          look:
+            "#{name} — #{ad.coordinate}: #{Enum.join(intents, "; ")}"
+            |> String.trim_trailing(": "),
+          recon: %{
+            type: :implementation,
+            coordinate: ad.coordinate,
+            kinds: ad.kinds,
+            fidelity: ad.fidelity,
+            provenance: Map.get(ad.provenance, :source),
+            idempotency: Map.get(ad.constraint, :idempotency, %{}),
+            blast_radius: Map.get(ad.constraint, :blast_radius, %{})
+          },
+          choices: %{verbs: actions, arguments: "key-value pairs: [#{name}::verb :key value]"}
+        }
+    end
+  end
+
   defp pairs(args) do
     if rem(length(args), 2) == 0 do
       args
