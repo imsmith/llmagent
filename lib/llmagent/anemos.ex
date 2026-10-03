@@ -142,7 +142,11 @@ defmodule LLMAgent.Anemos do
   """
   @impl Anemos.Runtime.Module
   def describe(name) do
-    {:ok, ads} = Discovery.find_all(ToolQuery.new(%{coordinate: "*"}))
+    ads =
+      case Discovery.find_all(ToolQuery.new(%{coordinate: "*"})) do
+        {:ok, ads} -> ads
+        _ -> []
+      end
 
     case Enum.find(ads, &(module_name(&1.coordinate) == name)) do
       nil ->
