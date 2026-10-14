@@ -77,10 +77,10 @@ defmodule LLMAgent.Tools.WebTest do
   end
 
   describe "tool-discovery substrate (via Dispatcher)" do
-    # Bypass opens a real local TCP port so Req.get/post hit it without
-    # modifying perform/2.  async: false is required by Bypass.
+    # FakeHTTP opens a real local TCP port so Req.get/post hit it without
+    # modifying perform/2.  async: false: Discovery is a singleton.
     use ExUnit.Case, async: false
-    alias LLMAgent.{Tools.Web, Tools.Discovery, Tool.Dispatcher, Tool.Policy}
+    alias LLMAgent.{FakeHTTP, Tools.Web, Tools.Discovery, Tool.Dispatcher, Tool.Policy}
 
     setup do
       case Process.whereis(Discovery) do
@@ -92,8 +92,8 @@ defmodule LLMAgent.Tools.WebTest do
       LLMAgent.Tool.Kinds.init_registry()
       :ok = Discovery.register(Web.ad())
 
-      bypass = Bypass.open()
-      {:ok, bypass: bypass, base_url: "http://localhost:#{bypass.port}"}
+      server = FakeHTTP.open()
+      {:ok, server: server, base_url: "http://localhost:#{server.port}"}
     end
 
     test "ad/0 declares :query and :action with coordinate function.http" do
@@ -103,8 +103,8 @@ defmodule LLMAgent.Tools.WebTest do
       assert :action in ad.kinds
     end
 
-    test "dispatcher.query/4 get dispatches", %{bypass: bypass, base_url: base_url} do
-      Bypass.expect_once(bypass, "GET", "/hello", fn conn ->
+    test "dispatcher.query/4 get dispatches", %{server: server, base_url: base_url} do
+      FakeHTTP.expect_once(server, "GET", "/hello", fn conn ->
         conn
         |> Plug.Conn.put_resp_content_type("text/plain")
         |> Plug.Conn.resp(200, "pong")
@@ -120,8 +120,8 @@ defmodule LLMAgent.Tools.WebTest do
                  %{"url" => "#{base_url}/hello"}, policy: policy)
     end
 
-    test "dispatcher.act/5 post dispatches", %{bypass: bypass, base_url: base_url} do
-      Bypass.expect_once(bypass, "POST", "/submit", fn conn ->
+    test "dispatcher.act/5 post dispatches", %{server: server, base_url: base_url} do
+      FakeHTTP.expect_once(server, "POST", "/submit", fn conn ->
         conn
         |> Plug.Conn.put_resp_content_type("application/json")
         |> Plug.Conn.resp(201, ~s({"ok":true}))

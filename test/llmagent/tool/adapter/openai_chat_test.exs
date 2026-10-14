@@ -3,15 +3,15 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatTest do
 
   use ExUnit.Case, async: false
 
-  alias LLMAgent.Tool.Adapter.OpenAIChat
+  alias LLMAgent.{FakeHTTP, Tool.Adapter.OpenAIChat}
 
   setup do
-    bypass = Bypass.open()
-    {:ok, bypass: bypass, host: "http://localhost:#{bypass.port}"}
+    server = FakeHTTP.open()
+    {:ok, server: server, host: "http://localhost:#{server.port}"}
   end
 
-  test "delegates chat to the OpenAI client and returns provenance", %{bypass: bypass, host: host} do
-    Bypass.expect_once(bypass, "POST", "/chat/completions", fn conn ->
+  test "delegates chat to the OpenAI client and returns provenance", %{server: server, host: host} do
+    FakeHTTP.expect_once(server, "POST", "/chat/completions", fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn)
       assert body =~ "stub-model"
       conn
@@ -27,8 +27,8 @@ defmodule LLMAgent.Tool.Adapter.OpenAIChatTest do
     assert is_integer(latency) and latency >= 0
   end
 
-  test "returns an error tuple on http failure", %{bypass: bypass, host: host} do
-    Bypass.expect_once(bypass, "POST", "/chat/completions", fn conn ->
+  test "returns an error tuple on http failure", %{server: server, host: host} do
+    FakeHTTP.expect_once(server, "POST", "/chat/completions", fn conn ->
       Plug.Conn.resp(conn, 500, ~s({"error":"boom"}))
     end)
 

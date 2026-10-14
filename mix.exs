@@ -7,7 +7,7 @@ defmodule LLMAgent.MixProject do
     [
       app: :LLMAgent,
       version: "0.3.0",
-      elixir: "~> 1.16",
+      elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
@@ -32,15 +32,15 @@ defmodule LLMAgent.MixProject do
   defp deps do
     [
       {:mix_test_watch, "~> 1.1", only: [:dev], runtime: false},
-      {:bypass, "~> 2.1", only: :test},
+      {:bandit, "~> 1.8", only: :test},
       {:telemetry_test, "~> 0.1", only: :test},
       {:plug, "~> 1.16", only: [:test]},
-      {:req, "~> 0.5"},
+      {:req, "~> 0.7"},
       {:jason, "~> 1.4"},
       {:b58, "~> 1.0"},
-      {:ex_edn, path: "../ex_edn"},
-      {:anemos, path: "../anemos"},
-      {:comn, github: "imsmith/comn", tag: "v0.5.2"}
+      {:ex_edn, github: "imsmith/ex_edn", tag: "v0.1.0"},
+      {:anemos, github: "imsmith/anemos"},
+      {:comn, github: "imsmith/comn", tag: "v0.6.3"}
     ]
   end
 end

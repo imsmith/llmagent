@@ -6,7 +6,7 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
 
   use ExUnit.Case, async: false
 
-  alias LLMAgent.{ToolAd, ToolQuery, Turn}
+  alias LLMAgent.{FakeHTTP, ToolAd, ToolQuery, Turn}
   alias LLMAgent.Tool.{Dispatcher, Policy}
   alias LLMAgent.Tools.Discovery
   alias LLMAgent.WireFixtures
@@ -22,8 +22,8 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
     LLMAgent.Tool.Bindings.init_registry()
     LLMAgent.Tool.Kinds.init_registry()
 
-    bypass = Bypass.open()
-    {:ok, bypass: bypass, host: "http://localhost:#{bypass.port}"}
+    server = FakeHTTP.open()
+    {:ok, server: server, host: "http://localhost:#{server.port}"}
   end
 
   defp llama_ad(host, model, id \\ "llama.skynet-test.8080") do
@@ -54,10 +54,10 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
     end
   end
 
-  defp serve(bypass, fixture) do
+  defp serve(server, fixture) do
     test = self()
 
-    Bypass.expect_once(bypass, "POST", "/chat/completions", fn conn ->
+    FakeHTTP.expect_once(server, "POST", "/chat/completions", fn conn ->
       {:ok, request, conn} = Plug.Conn.read_body(conn)
       send(test, {:request, Jason.decode!(request)})
 
@@ -68,15 +68,15 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
   end
 
   # Fails the test if the performer is contacted at all.
-  defp refuse_all(bypass) do
-    Bypass.stub(bypass, "POST", "/chat/completions", fn conn ->
+  defp refuse_all(server) do
+    FakeHTTP.stub(server, "POST", "/chat/completions", fn conn ->
       flunk("the performer was contacted: #{conn.request_path}")
     end)
   end
 
   test "an allowing policy streams the turn and returns the folded message", ctx do
     :ok = Discovery.register(llama_ad(ctx.host, "m"))
-    serve(ctx.bypass, "openai_tool_stream.sse")
+    serve(ctx.server, "openai_tool_stream.sse")
 
     assert {:ok, message, provenance} =
              Dispatcher.generate("compute.llm.chat", "chat", %{turn: turn()}, policy: @allow, into: collector())
@@ -89,7 +89,7 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
 
   test "the default policy denies and the performer is never contacted", ctx do
     :ok = Discovery.register(llama_ad(ctx.host, "m"))
-    refuse_all(ctx.bypass)
+    refuse_all(ctx.server)
 
     assert {:error, :forbidden, :not_allowed} =
              Dispatcher.generate("compute.llm.chat", "chat", %{turn: turn()}, into: collector())
@@ -99,7 +99,7 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
 
   test "a policy naming another provenance source denies and the performer is never contacted", ctx do
     :ok = Discovery.register(llama_ad(ctx.host, "m"))
-    refuse_all(ctx.bypass)
+    refuse_all(ctx.server)
     policy = %{@allow | provenance: %{source: ["hub.config"], signed: false}}
 
     assert {:error, :forbidden, :provenance} =
@@ -110,7 +110,7 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
 
   test "a policy naming the ad's provenance source allows", ctx do
     :ok = Discovery.register(llama_ad(ctx.host, "m"))
-    serve(ctx.bypass, "openai_text_stream.sse")
+    serve(ctx.server, "openai_text_stream.sse")
     policy = %{@allow | provenance: %{source: ["mdns/_llama._tcp"], signed: false}}
 
     assert {:ok, _message, %{stop_reason: :end_turn}} =
@@ -119,7 +119,7 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
 
   test "an allowed call emits the generate telemetry event", ctx do
     :ok = Discovery.register(llama_ad(ctx.host, "m"))
-    serve(ctx.bypass, "openai_text_stream.sse")
+    serve(ctx.server, "openai_text_stream.sse")
     parent = self()
     handler = "generate-turn-#{System.unique_integer([:positive])}"
 
@@ -148,7 +148,7 @@ defmodule LLMAgent.Tool.GenerateTurnDispatchTest do
     assert {:ok, [%ToolAd{binding: {:openai_chat, %{model: "new-model"}}}]} =
              Discovery.find_all(ToolQuery.new(%{coordinate: "compute.llm.chat"}))
 
-    serve(ctx.bypass, "openai_text_stream.sse")
+    serve(ctx.server, "openai_text_stream.sse")
     assert {:ok, _, _} = Dispatcher.generate("compute.llm.chat", "chat", %{turn: turn()}, policy: @allow)
     assert_received {:request, %{"model" => "new-model"}}
   end
